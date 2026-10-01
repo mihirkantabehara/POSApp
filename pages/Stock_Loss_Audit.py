@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -156,6 +157,7 @@ with tab1:
 
             except Exception as e:
                 st.error("Unable to save stock adjustment.")
+                log_exception(e)
                 st.exception(e)
 
 with tab2:
@@ -259,4 +261,5 @@ with tab2:
 
     except Exception as e:
         st.error("Unable to load adjustment history.")
+        log_exception(e)
         st.exception(e)

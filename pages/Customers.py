@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from database.database import engine
 
@@ -57,6 +58,7 @@ if st.button("➕ Add Customer"):
         except Exception as e:
 
             st.error("Error adding customer.")
+            log_exception(e)
             st.exception(e)
 
 
@@ -99,4 +101,6 @@ try:
 except Exception as e:
 
     st.error("Database connection error.")
+    log_exception(e)
+    log_exception(e)
     st.exception(e)

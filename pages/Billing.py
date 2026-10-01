@@ -3,6 +3,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from logging_config import log_exception
 import streamlit.components.v1 as components
 from sqlalchemy import text
 
@@ -296,6 +297,7 @@ try:
         )
 except Exception as exc:
     st.error("Cannot reach the database to check your cash drawer.")
+    log_exception(exc)
     st.exception(exc)
     st.stop()
 
@@ -311,6 +313,7 @@ try:
     customers = load_customers()
 except Exception as exc:
     st.error("Could not load products. Check the database connection.")
+    log_exception(exc)
     st.exception(exc)
     st.stop()
 

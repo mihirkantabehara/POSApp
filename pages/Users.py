@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from database.database import engine
 from auth import require_role, create_user, update_user, reset_password
@@ -32,6 +33,7 @@ if submitted:
             st.rerun()
         except Exception as e:
             st.error("Could not create user. Username may already exist.")
+            log_exception(e)
             st.exception(e)
 
 st.divider()
@@ -73,6 +75,7 @@ try:
                 st.rerun()
             except Exception as e:
                 st.error("Could not update user.")
+                log_exception(e)
                 st.exception(e)
 
         st.divider()
@@ -88,8 +91,10 @@ try:
                     st.success("Password reset successfully.")
                 except Exception as e:
                     st.error("Could not reset password.")
+                    log_exception(e)
                     st.exception(e)
 
 except Exception as e:
     st.error("Could not load users.")
+    log_exception(e)
     st.exception(e)

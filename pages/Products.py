@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from datetime import date, timedelta
 from sqlalchemy import text
@@ -522,6 +523,7 @@ def edit_product_dialog(row):
 
             except Exception as e:
                 st.error("Could not update product.")
+                log_exception(e)
                 st.exception(e)
 
 
@@ -832,6 +834,7 @@ with tab1:
 
     except Exception as e:
         st.error("Unable to load products.")
+        log_exception(e)
         st.exception(e)
 
 
@@ -993,6 +996,7 @@ with tab2:
 
             except Exception as e:
                 st.error("Could not add product.")
+                log_exception(e)
                 st.exception(e)
 
 
@@ -1181,10 +1185,12 @@ with tab3:
 
                         except Exception as e:
                             st.error("Could not update batch stock.")
+                            log_exception(e)
                             st.exception(e)
 
     except Exception as e:
         st.error("Unable to load stock adjustment data.")
+        log_exception(e)
         st.exception(e)
 
 

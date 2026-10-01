@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -223,6 +224,7 @@ try:
     items = load_sale_items(current_sale_id)
 except Exception as e:
     st.error("Unable to load the bill.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 
@@ -698,4 +700,5 @@ if process_return:
 
     except Exception as e:
         st.error("Sales return failed. No changes were saved.")
+        log_exception(e)
         st.exception(e)

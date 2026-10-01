@@ -1,7 +1,12 @@
 import streamlit as st
 import hashlib
+import inspect
+from pathlib import Path
+from logging_config import get_logger, log_page_view
 from database.database import engine
 from sqlalchemy import text
+
+logger = get_logger(__name__)
 
 ROLE_PERMISSIONS = {
     "Sales Boy": {
@@ -59,8 +64,18 @@ def require_login():
 
 def require_role(*allowed_roles):
     user = require_login()
+    caller = inspect.currentframe().f_back
+    page_file = caller.f_globals.get("__file__", "")
+    page_name = Path(page_file).stem if page_file else "unknown"
+    log_page_view(page_name, user)
 
     if user["Role"] not in allowed_roles:
+        logger.warning(
+            "access_denied user_id=%s role=%s page=%s",
+            user.get("UserID", "unknown"),
+            user.get("Role", "unknown"),
+            page_name,
+        )
         st.error("⛔ You do not have permission to access this page.")
         st.stop()
 

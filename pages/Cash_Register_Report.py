@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -52,6 +53,7 @@ try:
 
 except Exception as e:
     st.error("Unable to load cash register history.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 
@@ -160,6 +162,7 @@ try:
 
 except Exception as e:
     st.error("Unable to load cashier sales.")
+    log_exception(e)
     st.exception(e)
 
 # =========================================================
@@ -205,6 +208,7 @@ try:
 
 except Exception as e:
     st.error("Unable to load cash transactions.")
+    log_exception(e)
     st.exception(e)
 
 # =========================================================

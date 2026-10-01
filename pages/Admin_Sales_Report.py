@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -38,6 +39,7 @@ try:
         )
 except Exception as e:
     st.error("Unable to load employees.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 
@@ -97,6 +99,7 @@ try:
         sales = pd.read_sql(query, connection, params=params)
 except Exception as e:
     st.error("Unable to load admin sales report.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 

@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from database.database import engine
 from sqlalchemy import text
@@ -43,6 +44,7 @@ try:
 except Exception as e:
 
     st.error("Could not load products.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 
@@ -297,6 +299,7 @@ else:
         except Exception as e:
 
             st.error("Error saving purchase.")
+            log_exception(e)
             st.exception(e)
 
 

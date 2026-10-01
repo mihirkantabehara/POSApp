@@ -1,4 +1,8 @@
 import streamlit as st
+from logging_config import get_logger
+
+logger = get_logger(__name__)
+
 import hashlib
 import hmac
 from sqlalchemy import text
@@ -53,6 +57,7 @@ def check_login(username, password):
             }
 
     except Exception:
+        logger.exception("Login lookup failed")
         return None
 
     return None
@@ -99,15 +104,27 @@ def show_login():
             user = check_login(username, password)
 
             if user:
+                logger.info(
+                    "login_succeeded user_id=%s role=%s",
+                    user["UserID"],
+                    user["Role"],
+                )
                 st.session_state.logged_in = True
                 st.session_state.user = user
                 st.rerun()
             else:
+                logger.warning("login_rejected")
                 st.error(
                     "Invalid username, password, or inactive user."
                 )
 
 def logout():
+    user = st.session_state.get("user") or {}
+    logger.info(
+        "logout user_id=%s role=%s",
+        user.get("UserID", "unknown"),
+        user.get("Role", "unknown"),
+    )
     st.session_state.logged_in = False
     st.session_state.user = None
     st.rerun()

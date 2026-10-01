@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -78,6 +79,7 @@ try:
 except Exception as e:
     st.error("Cash module tables are not available yet.")
     st.info("Run the supplied cash_in_hand.sql file in SQL Server Management Studio first.")
+    log_exception(e)
     st.exception(e)
     st.stop()
 
@@ -140,6 +142,7 @@ if not drawer:
 
         except Exception as e:
             st.error("Could not open cash drawer.")
+            log_exception(e)
             st.exception(e)
 
     st.stop()
@@ -257,6 +260,7 @@ if st.button(
 
         except Exception as e:
             st.error("Could not save cash transaction.")
+            log_exception(e)
             st.exception(e)
 
 # =========================================================
@@ -339,4 +343,5 @@ if st.button(
 
     except Exception as e:
         st.error("Could not close cash drawer.")
+        log_exception(e)
         st.exception(e)

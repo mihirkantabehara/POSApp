@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from sqlalchemy import text
 from database.database import engine
@@ -43,6 +44,7 @@ if role == "Sales Boy":
 
     except Exception as e:
         st.error("Unable to load your sales dashboard.")
+        log_exception(e)
         st.exception(e)
 
 # =========================================================
@@ -150,4 +152,5 @@ else:
 
     except Exception as e:
         st.error("Unable to load dashboard data.")
+        log_exception(e)
         st.exception(e)

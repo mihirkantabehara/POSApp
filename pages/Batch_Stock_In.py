@@ -1,4 +1,5 @@
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from datetime import date
 from sqlalchemy import text
@@ -216,6 +217,7 @@ try:
 except Exception as e:
 
     st.error("Unable to load batch information.")
+    log_exception(e)
     st.exception(e)
 
 
@@ -545,6 +547,7 @@ else:
                     "Unable to save batch."
                 )
 
+                log_exception(e)
                 st.exception(e)
 
 
@@ -660,4 +663,6 @@ except Exception as e:
         "Unable to load batch inventory."
     )
 
+    log_exception(e)
+    log_exception(e)
     st.exception(e)

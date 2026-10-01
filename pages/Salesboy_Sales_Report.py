@@ -1,5 +1,6 @@
 
 import streamlit as st
+from logging_config import log_exception
 import pandas as pd
 from datetime import date, timedelta
 from sqlalchemy import text
