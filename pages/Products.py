@@ -691,7 +691,8 @@ with tab1:
             )
 
             header = st.columns(
-                [3, 1.6, 1.1, 1.1, 0.9, 0.8, 0.6]
+                [3, 1.6, 1.1, 1.1, 0.9, 0.8, 0.6],
+                wrap=False,
             )
 
             for col, label in zip(
@@ -713,7 +714,8 @@ with tab1:
 
             for row in page_products.itertuples():
                 r1, r2, r3, r4, r5, r6, r7 = st.columns(
-                    [3, 1.6, 1.1, 1.1, 0.9, 0.8, 0.6]
+                    [3, 1.6, 1.1, 1.1, 0.9, 0.8, 0.6],
+                    wrap=False,
                 )
 
                 r1.markdown(

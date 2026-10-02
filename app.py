@@ -16,6 +16,40 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+    @media (max-width: 640px) {
+        .block-container {
+            padding: 1rem 0.75rem 2rem !important;
+        }
+
+        [data-testid="stButton"] button,
+        [data-testid="stFormSubmitButton"] button,
+        [data-testid="stDownloadButton"] button {
+            min-height: 44px !important;
+        }
+
+        [data-testid="stTextInput"] input,
+        [data-testid="stNumberInput"] input,
+        [data-testid="stDateInput"] input,
+        [data-testid="stTimeInput"] input,
+        [data-testid="stSelectbox"] [role="combobox"],
+        [data-testid="stMultiSelect"] [role="combobox"] {
+            min-height: 44px;
+            font-size: 16px !important;
+        }
+
+        [data-testid="stDialog"] [role="dialog"] {
+            width: calc(100vw - 1rem) !important;
+            max-width: calc(100vw - 1rem) !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def hash_password(password):
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
@@ -250,6 +284,15 @@ if permissions.get("users"):
             "pages/Users.py",
             title="User Management",
             icon="👤",
+        )
+    )
+
+if permissions.get("employees"):
+    pages.append(
+        st.Page(
+            "pages/Employees.py",
+            title="Employees",
+            icon="👥",
         )
     )
 

@@ -7,3 +7,5 @@ venv/
 !.env.example
 
 logs/
+database/
+streamlit/

@@ -1054,7 +1054,10 @@ end_index = start_index + page_size
 page_sales = sales.iloc[start_index:end_index]
 
 # Header
-h = st.columns([0.65, 0.90, 1.25, 1.65, 0.85, 1.05, 0.95, 0.95])
+h = st.columns(
+    [0.65, 0.90, 1.25, 1.65, 0.85, 1.05, 0.95, 0.95],
+    wrap=False,
+)
 
 headers = [
     "View",
@@ -1079,7 +1082,10 @@ for _, row in page_sales.iterrows():
     sale_id = int(row["SaleID"])
     sale_date = pd.to_datetime(row["SaleDate"])
 
-    cols = st.columns([0.65, 0.90, 1.25, 1.65, 0.85, 1.05, 0.95, 0.95])
+    cols = st.columns(
+        [0.65, 0.90, 1.25, 1.65, 0.85, 1.05, 0.95, 0.95],
+        wrap=False,
+    )
 
     with cols[0]:
         if st.button(
