@@ -6,7 +6,8 @@ from sqlalchemy import text
 
 from auth import require_role
 require_role("Manager", "Admin")
-#st.title("📥 Stock In / Purchase")
+
+# st.title("📥 Stock In / Purchase")
 
 
 # =====================================
@@ -26,23 +27,21 @@ supplier_name = st.text_input(
 # =====================================
 
 try:
-
     products = pd.read_sql(
-        """
-        SELECT
-            ProductID,
-            ProductName,
-            Barcode,
-            Stock,
-            SellingPrice
-        FROM Products
-        ORDER BY ProductName
-        """,
+        text("""
+            SELECT
+                "ProductID",
+                "ProductName",
+                "Barcode",
+                "Stock",
+                "SellingPrice"
+            FROM "Products"
+            ORDER BY "ProductName"
+        """),
         engine
     )
 
 except Exception as e:
-
     st.error("Could not load products.")
     log_exception(e)
     st.exception(e)
@@ -50,11 +49,9 @@ except Exception as e:
 
 
 if products.empty:
-
     st.warning(
         "No products found. Add products first."
     )
-
     st.stop()
 
 
@@ -69,7 +66,6 @@ selected_product = st.selectbox(
     products["ProductName"].tolist()
 )
 
-
 selected = products[
     products["ProductName"] == selected_product
 ].iloc[0]
@@ -78,13 +74,10 @@ selected = products[
 col1, col2 = st.columns(2)
 
 with col1:
-
     st.write("Current Stock")
     st.write(f"{selected['Stock']}")
 
-
 with col2:
-
     st.write("Selling Price")
     st.write(
         f"₹{selected['SellingPrice']:.2f}"
@@ -97,7 +90,6 @@ quantity = st.number_input(
     value=1.0,
     step=1.0
 )
-
 
 purchase_price = st.number_input(
     "Purchase Price",
@@ -112,12 +104,10 @@ purchase_price = st.number_input(
 # =====================================
 
 if "purchase_cart" not in st.session_state:
-
     st.session_state.purchase_cart = []
 
 
 if st.button("➕ Add to Purchase"):
-
     item = {
         "ProductID": int(selected["ProductID"]),
         "ProductName": selected["ProductName"],
@@ -140,26 +130,19 @@ st.subheader("📋 Current Purchase")
 
 
 if len(st.session_state.purchase_cart) == 0:
-
     st.info("No items added.")
 
-
 else:
-
     total_amount = 0
-
     purchase_data = []
 
-
     for item in st.session_state.purchase_cart:
-
         amount = (
             item["Quantity"] *
             item["PurchasePrice"]
         )
 
         total_amount += amount
-
 
         purchase_data.append(
             {
@@ -170,18 +153,13 @@ else:
             }
         )
 
-
-    purchase_df = pd.DataFrame(
-        purchase_data
-    )
-
+    purchase_df = pd.DataFrame(purchase_data)
 
     st.dataframe(
         purchase_df,
         use_container_width=True,
         hide_index=True
     )
-
 
     st.subheader(
         f"Total Purchase: ₹{total_amount:,.2f}"
@@ -193,60 +171,49 @@ else:
     # =================================
 
     if st.button("💾 Save Purchase"):
-
         try:
-
             with engine.begin() as connection:
 
                 # Save purchase header
-
                 result = connection.execute(
-                    text(
-                        """
-                        INSERT INTO Purchases
+                    text("""
+                        INSERT INTO "Purchases"
                         (
-                            SupplierName,
-                            TotalAmount
+                            "SupplierName",
+                            "TotalAmount"
                         )
-                        OUTPUT INSERTED.PurchaseID
                         VALUES
                         (
                             :supplier,
                             :total
                         )
-                        """
-                    ),
+                        RETURNING "PurchaseID"
+                    """),
                     {
                         "supplier": supplier_name,
                         "total": total_amount
                     }
                 )
 
-
-                purchase_id = result.fetchone()[0]
-
+                purchase_id = result.scalar_one()
 
                 # Save purchase items
                 # and increase stock
-
                 for item in st.session_state.purchase_cart:
-
                     amount = (
                         item["Quantity"] *
                         item["PurchasePrice"]
                     )
 
-
                     connection.execute(
-                        text(
-                            """
-                            INSERT INTO PurchaseItems
+                        text("""
+                            INSERT INTO "PurchaseItems"
                             (
-                                PurchaseID,
-                                ProductID,
-                                Quantity,
-                                PurchasePrice,
-                                Amount
+                                "PurchaseID",
+                                "ProductID",
+                                "Quantity",
+                                "PurchasePrice",
+                                "Amount"
                             )
                             VALUES
                             (
@@ -256,8 +223,7 @@ else:
                                 :price,
                                 :amount
                             )
-                            """
-                        ),
+                        """),
                         {
                             "purchase_id": purchase_id,
                             "product_id": item["ProductID"],
@@ -267,37 +233,28 @@ else:
                         }
                     )
 
-
                     # Increase stock
-
                     connection.execute(
-                        text(
-                            """
-                            UPDATE Products
-                            SET Stock = Stock + :quantity
-                            WHERE ProductID = :product_id
-                            """
-                        ),
+                        text("""
+                            UPDATE "Products"
+                            SET "Stock" = "Stock" + :quantity
+                            WHERE "ProductID" = :product_id
+                        """),
                         {
                             "quantity": item["Quantity"],
                             "product_id": item["ProductID"]
                         }
                     )
 
-
             st.success(
                 f"Purchase saved successfully! "
                 f"Purchase No: {purchase_id}"
             )
 
-
             st.session_state.purchase_cart = []
-
             st.rerun()
 
-
         except Exception as e:
-
             st.error("Error saving purchase.")
             log_exception(e)
             st.exception(e)
@@ -308,7 +265,5 @@ else:
     # =================================
 
     if st.button("🗑️ Clear Purchase"):
-
         st.session_state.purchase_cart = []
-
         st.rerun()

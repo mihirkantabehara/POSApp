@@ -44,28 +44,28 @@ end_dt = (end_date + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 # PurchasePrice and ProfitAmount are already present.
 query = text("""
     SELECT
-        s.SaleID,
-        s.SaleDate,
-        s.CustomerName,
-        s.PaymentMode,
-        u.FullName AS Salesperson,
-        SUM(si.Quantity * si.Price) AS SalesValue,
-        SUM(si.Quantity * si.PurchasePrice) AS PurchaseCost,
-        SUM(si.ProfitAmount) AS Profit
-    FROM Sales s
-    INNER JOIN SaleItems si
-        ON si.SaleID = s.SaleID
-    LEFT JOIN Users u
-        ON u.UserID = s.UserID
-    WHERE s.SaleDate >= :start_date
-      AND s.SaleDate < :end_date
+        s."SaleID",
+        s."SaleDate",
+        s."CustomerName",
+        s."PaymentMode",
+        u."FullName" AS "Salesperson",
+        SUM(si."Quantity" * si."Price") AS "SalesValue",
+        SUM(si."Quantity" * si."PurchasePrice") AS "PurchaseCost",
+        SUM(si."ProfitAmount") AS "Profit"
+    FROM "Sales" s
+    INNER JOIN "SaleItems" si
+        ON si."SaleID" = s."SaleID"
+    LEFT JOIN "Users" u
+        ON u."UserID" = s."UserID"
+    WHERE s."SaleDate" >= :start_date
+      AND s."SaleDate" < :end_date
     GROUP BY
-        s.SaleID,
-        s.SaleDate,
-        s.CustomerName,
-        s.PaymentMode,
-        u.FullName
-    ORDER BY s.SaleDate DESC
+        s."SaleID",
+        s."SaleDate",
+        s."CustomerName",
+        s."PaymentMode",
+        u."FullName"
+    ORDER BY s."SaleDate" DESC
 """)
 
 try:

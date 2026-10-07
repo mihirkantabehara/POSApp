@@ -1,29 +1,32 @@
 import streamlit as st
-from sqlalchemy import URL, create_engine, text
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-SERVER = "100.76.103.109"
-PORT = 1433
-DATABASE = "POSDB"
-
 database_credentials = st.secrets["database"]
 
-CONNECTION_STRING = URL.create(
-    "mssql+pyodbc",
-    username=database_credentials["username"],
-    password=database_credentials["password"],
-    host=SERVER,
-    port=PORT,
-    database=DATABASE,
-    query={
-        "driver": "ODBC Driver 18 for SQL Server",
-        "TrustServerCertificate": "yes",
-    },
+DB_USER = database_credentials["username"]
+DB_PASSWORD = database_credentials["password"]
+DB_HOST = database_credentials.get("host", "localhost")
+DB_PORT = database_credentials.get("port", 5432)
+DB_NAME = database_credentials.get("database", "POSDB")
+
+DATABASE_URL = URL.create(
+    drivername="postgresql+psycopg",
+    username=DB_USER,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+    database=DB_NAME,
 )
 
-engine = create_engine(CONNECTION_STRING, hide_parameters=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=3600,
+)
 
 
 def test_connection():

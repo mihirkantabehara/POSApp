@@ -1,12 +1,14 @@
 import streamlit as st
 from logging_config import log_exception
 import pandas as pd
+from sqlalchemy import text
 from database.database import engine
 
 
-#st.title("👥 Customers")
+# st.title("👥 Customers")
 from auth import require_role
 require_role("Manager", "Admin")
+
 
 # =========================
 # ADD CUSTOMER
@@ -33,22 +35,22 @@ if st.button("➕ Add Customer"):
     else:
 
         query = """
-        INSERT INTO Customers
-        (CustomerName, Mobile, Address)
-        VALUES (?, ?, ?)
+        INSERT INTO "Customers"
+        ("CustomerName", "Mobile", "Address")
+        VALUES (:customer_name, :mobile, :address)
         """
 
         try:
 
             with engine.begin() as connection:
 
-                connection.exec_driver_sql(
-                    query,
-                    (
-                        customer_name,
-                        mobile,
-                        address
-                    )
+                connection.execute(
+                    text(query),
+                    {
+                        "customer_name": customer_name,
+                        "mobile": mobile,
+                        "address": address
+                    }
                 )
 
             st.success("Customer added successfully!")
@@ -75,16 +77,16 @@ try:
 
     query = """
     SELECT
-        CustomerID,
-        CustomerName,
-        Mobile,
-        Address,
-        CreatedDate
-    FROM Customers
-    ORDER BY CustomerID DESC
+        "CustomerID",
+        "CustomerName",
+        "Mobile",
+        "Address",
+        "CreatedDate"
+    FROM "Customers"
+    ORDER BY "CustomerID" DESC
     """
 
-    df = pd.read_sql(query, engine)
+    df = pd.read_sql(text(query), engine)
 
     if df.empty:
 
@@ -101,6 +103,5 @@ try:
 except Exception as e:
 
     st.error("Database connection error.")
-    log_exception(e)
     log_exception(e)
     st.exception(e)

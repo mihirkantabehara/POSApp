@@ -7,7 +7,7 @@ from auth import require_role
 
 user = require_role("Admin")
 
-#st.title("👑 Admin Sales Report")
+# st.title("👑 Admin Sales Report")
 st.caption("Complete sales, employee and profit report")
 
 # ---------------------------------------------------------
@@ -30,10 +30,12 @@ try:
     with engine.connect() as connection:
         employees = pd.read_sql(
             text("""
-                SELECT UserID, FullName
-                FROM Users
-                WHERE IsActive = 1
-                ORDER BY FullName
+                SELECT
+                    "UserID",
+                    "FullName"
+                FROM "Users"
+                WHERE "IsActive" = TRUE
+                ORDER BY "FullName"
             """),
             connection
         )
@@ -59,7 +61,7 @@ if selected_employee != "All Employees":
             "UserID"
         ].iloc[0]
     )
-    employee_filter = " AND s.UserID = :user_id"
+    employee_filter = ' AND s."UserID" = :user_id'
     params["user_id"] = selected_user_id
 
 # ---------------------------------------------------------
@@ -68,30 +70,30 @@ if selected_employee != "All Employees":
 # ---------------------------------------------------------
 query = text(f"""
     SELECT
-        s.SaleID,
-        s.SaleDate,
-        s.CustomerName,
-        COALESCE(u.FullName, 'Unknown') AS Salesperson,
-        s.PaymentMode,
-        SUM(si.Quantity) AS TotalQty,
-        SUM(si.Amount) AS SalesValue,
-        SUM(si.Quantity * si.PurchasePrice) AS PurchaseCost,
-        SUM(si.ProfitAmount) AS GrossProfit
-    FROM Sales s
-    INNER JOIN SaleItems si
-        ON si.SaleID = s.SaleID
-    LEFT JOIN Users u
-        ON u.UserID = s.UserID
-    WHERE s.SaleDate >= :start_date
-      AND s.SaleDate < :end_date
+        s."SaleID",
+        s."SaleDate",
+        s."CustomerName",
+        COALESCE(u."FullName", 'Unknown') AS "Salesperson",
+        s."PaymentMode",
+        SUM(si."Quantity") AS "TotalQty",
+        SUM(si."Amount") AS "SalesValue",
+        SUM(si."Quantity" * si."PurchasePrice") AS "PurchaseCost",
+        SUM(si."ProfitAmount") AS "GrossProfit"
+    FROM "Sales" s
+    INNER JOIN "SaleItems" si
+        ON si."SaleID" = s."SaleID"
+    LEFT JOIN "Users" u
+        ON u."UserID" = s."UserID"
+    WHERE s."SaleDate" >= :start_date
+      AND s."SaleDate" < :end_date
       {employee_filter}
     GROUP BY
-        s.SaleID,
-        s.SaleDate,
-        s.CustomerName,
-        u.FullName,
-        s.PaymentMode
-    ORDER BY s.SaleDate DESC, s.SaleID DESC
+        s."SaleID",
+        s."SaleDate",
+        s."CustomerName",
+        u."FullName",
+        s."PaymentMode"
+    ORDER BY s."SaleDate" DESC, s."SaleID" DESC
 """)
 
 try:

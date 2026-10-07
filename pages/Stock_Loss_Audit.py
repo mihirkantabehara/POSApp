@@ -13,18 +13,27 @@ st.set_page_config(
 
 user = require_role("Manager", "Admin")
 
-#st.title("🧮 Stock Adjustment Audit")
-st.caption("Every manual stock change is recorded with user, old stock, new stock, reason and value.")
+st.caption(
+    "Every manual stock change is recorded with user, old stock, "
+    "new stock, reason and value."
+)
+
 
 @st.cache_data(ttl=30)
 def load_products():
     query = text("""
-        SELECT ProductID, ProductName, Barcode, SellingPrice, Stock
-        FROM Products
-        ORDER BY ProductName
+        SELECT
+            "ProductID",
+            "ProductName",
+            "Barcode",
+            "SellingPrice",
+            "Stock"
+        FROM "Products"
+        ORDER BY "ProductName"
     """)
     with engine.connect() as connection:
         return pd.read_sql(query, connection)
+
 
 products = load_products()
 
@@ -32,11 +41,16 @@ if products.empty:
     st.info("No products found.")
     st.stop()
 
-tab1, tab2 = st.tabs(["➕ New Adjustment", "📜 Adjustment History"])
+
+tab1, tab2 = st.tabs(
+    ["➕ New Adjustment", "📜 Adjustment History"]
+)
+
 
 with tab1:
     product_options = {
-        f"{row['ProductName']} | {row['Barcode'] if pd.notna(row['Barcode']) else ''}":
+        f"{row['ProductName']} | "
+        f"{row['Barcode'] if pd.notna(row['Barcode']) else ''}":
         int(row["ProductID"])
         for _, row in products.iterrows()
     }
@@ -45,13 +59,18 @@ with tab1:
         "Select Product",
         list(product_options.keys())
     )
+
     product_id = product_options[selected]
 
-    row = products[products["ProductID"] == product_id].iloc[0]
+    row = products[
+        products["ProductID"] == product_id
+    ].iloc[0]
+
     old_stock = float(row["Stock"] or 0)
     unit_price = float(row["SellingPrice"] or 0)
 
     c1, c2, c3 = st.columns(3)
+
     c1.metric("Current Stock", f"{old_stock:g}")
     c2.metric("Unit Price", f"₹{unit_price:,.2f}")
 
@@ -72,19 +91,24 @@ with tab1:
             f"(₹{abs(difference_value):,.2f})"
         )
         adjustment_type = "Reduction"
+
     elif difference > 0:
         st.success(
             f"Stock increase: {difference:g} units "
             f"(₹{difference_value:,.2f})"
         )
         adjustment_type = "Increase"
+
     else:
         st.info("No stock change.")
         adjustment_type = "No Change"
 
     reason = st.text_area(
         "Reason *",
-        placeholder="Example: Damaged goods, missing stock, purchase correction, counting error..."
+        placeholder=(
+            "Example: Damaged goods, missing stock, purchase "
+            "correction, counting error..."
+        )
     )
 
     if st.button(
@@ -94,24 +118,26 @@ with tab1:
     ):
         if difference == 0:
             st.warning("There is no stock change to save.")
+
         elif not reason.strip():
             st.warning("Please enter a reason for the adjustment.")
+
         else:
             try:
                 with engine.begin() as connection:
                     connection.execute(
                         text("""
-                            INSERT INTO StockAdjustments
+                            INSERT INTO "StockAdjustments"
                             (
-                                ProductID,
-                                UserID,
-                                OldStock,
-                                NewStock,
-                                DifferenceQty,
-                                UnitPrice,
-                                DifferenceValue,
-                                AdjustmentType,
-                                Reason
+                                "ProductID",
+                                "UserID",
+                                "OldStock",
+                                "NewStock",
+                                "DifferenceQty",
+                                "UnitPrice",
+                                "DifferenceValue",
+                                "AdjustmentType",
+                                "Reason"
                             )
                             VALUES
                             (
@@ -141,9 +167,9 @@ with tab1:
 
                     connection.execute(
                         text("""
-                            UPDATE Products
-                            SET Stock = :new_stock
-                            WHERE ProductID = :product_id
+                            UPDATE "Products"
+                            SET "Stock" = :new_stock
+                            WHERE "ProductID" = :product_id
                         """),
                         {
                             "new_stock": new_stock,
@@ -159,6 +185,7 @@ with tab1:
                 st.error("Unable to save stock adjustment.")
                 log_exception(e)
                 st.exception(e)
+
 
 with tab2:
     st.subheader("Stock Adjustment History")
@@ -185,24 +212,27 @@ with tab2:
 
     query = text("""
         SELECT
-            a.StockAdjustmentID,
-            a.AdjustmentDateTime,
-            p.ProductName,
-            p.Barcode,
-            u.FullName AS AdjustedBy,
-            a.AdjustmentType,
-            a.OldStock,
-            a.NewStock,
-            a.DifferenceQty,
-            a.UnitPrice,
-            a.DifferenceValue,
-            a.Reason
-        FROM StockAdjustments a
-        INNER JOIN Products p ON p.ProductID = a.ProductID
-        INNER JOIN Users u ON u.UserID = a.UserID
-        WHERE a.AdjustmentDateTime >= :from_date
-          AND a.AdjustmentDateTime < DATEADD(day, 1, :to_date)
-        ORDER BY a.AdjustmentDateTime DESC
+            a."StockAdjustmentID",
+            a."AdjustmentDateTime",
+            p."ProductName",
+            p."Barcode",
+            u."FullName" AS "AdjustedBy",
+            a."AdjustmentType",
+            a."OldStock",
+            a."NewStock",
+            a."DifferenceQty",
+            a."UnitPrice",
+            a."DifferenceValue",
+            a."Reason"
+        FROM "StockAdjustments" a
+        INNER JOIN "Products" p
+            ON p."ProductID" = a."ProductID"
+        INNER JOIN "Users" u
+            ON u."UserID" = a."UserID"
+        WHERE a."AdjustmentDateTime" >= :from_date
+          AND a."AdjustmentDateTime"
+              < CAST(:to_date AS DATE) + INTERVAL '1 day'
+        ORDER BY a."AdjustmentDateTime" DESC
     """)
 
     try:
@@ -211,8 +241,8 @@ with tab2:
                 query,
                 connection,
                 params={
-                    "from_date": str(from_date),
-                    "to_date": str(to_date)
+                    "from_date": from_date,
+                    "to_date": to_date
                 }
             )
 
@@ -227,19 +257,20 @@ with tab2:
             reductions = history[
                 history["AdjustmentType"] == "Reduction"
             ]
+
             increases = history[
                 history["AdjustmentType"] == "Increase"
             ]
 
             m1, m2, m3 = st.columns(3)
-            m1.metric(
-                "Adjustments",
-                len(history)
-            )
+
+            m1.metric("Adjustments", len(history))
+
             m2.metric(
                 "Reduction Value",
                 f"₹{abs(reductions['DifferenceValue'].sum()):,.2f}"
             )
+
             m3.metric(
                 "Increase Value",
                 f"₹{increases['DifferenceValue'].sum():,.2f}"
@@ -252,6 +283,7 @@ with tab2:
             )
 
             csv = history.to_csv(index=False).encode("utf-8")
+
             st.download_button(
                 "⬇️ Export Adjustment Audit CSV",
                 csv,

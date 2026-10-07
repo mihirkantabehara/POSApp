@@ -1,18 +1,17 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
-            "name": "Python: Streamlit Debugger",
+            "name": "Debug Streamlit POSApp",
             "type": "debugpy",
             "request": "launch",
             "module": "streamlit",
             "args": [
                 "run",
-                "${file}",
-                "--server.port",
-                "8501"
+                "app.py"
             ],
-            "jinja": true
+            "console": "integratedTerminal"
         }
     ]
 }

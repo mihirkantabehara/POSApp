@@ -61,14 +61,14 @@ def check_login(username, password):
             row = connection.execute(
                 text("""
                     SELECT
-                        UserID,
-                        Username,
-                        PasswordHash,
-                        FullName,
-                        Role,
-                        IsActive
-                    FROM Users
-                    WHERE Username = :username
+                        "UserID",
+                        "Username",
+                        "PasswordHash",
+                        "FullName",
+                        "Role",
+                        "IsActive"
+                    FROM "Users"
+                    WHERE "Username" = :username
                 """),
                 {"username": username.strip()},
             ).mappings().first()
@@ -333,7 +333,31 @@ if permissions.get("salesboy_sales_report"):
     pages.append(
         st.Page(
             "pages/Salesboy_Sales_Report.py",
-            title="My Sales Report",
+            title="Sales Report",
+            icon="🔍",
+        )
+    )
+if permissions.get("government_rates"):
+    pages.append(
+        st.Page(
+            "pages/Government_Rates.py",
+            title="Government Rates",
+            icon=":material/price_check:",
+        )
+    )
+if permissions.get("manager_add_stock"):
+    pages.append(
+        st.Page(
+            "pages/Purchase_Stock.py",
+            title="Purchase Stock",
+            icon="🔍",
+        )
+    )
+if permissions.get("admin_stock_approval"):
+    pages.append(
+        st.Page(
+            "pages/Admin_Stock_Approval.py",
+            title="Added Stock Approval",
             icon="🔍",
         )
     )   
