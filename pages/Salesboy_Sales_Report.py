@@ -199,7 +199,7 @@ def load_bill_items(sale_id):
 
             (si."Amount" * si."GSTPercent" / 100.0) AS "GSTAmount",
 
-            (si."Amount" + (si."Amount" * si."GSTPercent" / 100.0)) AS LineTotal
+            (si."Amount" + (si."Amount" * si."GSTPercent" / 100.0)) AS "LineTotal"
 
         FROM "SaleItems" si
 
@@ -253,7 +253,7 @@ def show_bill_popup(sale_id):
 
             s."BalanceAmount",
 
-            u."FullName" AS SalesPerson
+            u."FullName" AS "SalesPerson"
 
         FROM "Sales" s
 

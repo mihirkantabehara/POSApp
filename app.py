@@ -269,6 +269,15 @@ if permissions.get("customers"):
         )
     )
 
+if permissions.get("customer_orders"):
+    pages.append(
+        st.Page(
+            "pages/Customer_Orders.py",
+            title="Customer Orders",
+            icon="🛍️",
+        )
+    )
+
 if permissions.get("reports"):
     pages.append(
         st.Page(
@@ -337,14 +346,7 @@ if permissions.get("salesboy_sales_report"):
             icon="🔍",
         )
     )
-if permissions.get("government_rates"):
-    pages.append(
-        st.Page(
-            "pages/Government_Rates.py",
-            title="Government Rates",
-            icon=":material/price_check:",
-        )
-    )
+
 if permissions.get("manager_add_stock"):
     pages.append(
         st.Page(
@@ -361,5 +363,23 @@ if permissions.get("admin_stock_approval"):
             icon="🔍",
         )
     )   
+
+if permissions.get("Customer_Credit_Management"):
+    pages.append(
+        st.Page(
+            "pages/Customer_Credit_Management.py",
+            title="Customer Credit",
+            icon="🔍",
+        )
+    )   
+
+if permissions.get("government_rates"):
+    pages.append(
+        st.Page(
+            "pages/Government_Rates.py",
+            title="Government Rates",
+            icon=":material/price_check:",
+        )
+    )
 pg = st.navigation(pages)
 pg.run()

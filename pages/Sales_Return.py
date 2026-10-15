@@ -172,6 +172,40 @@ def load_sale(sale_id):
     return dict(row) if row else None
 
 
+def search_sales_by_customer(search_term):
+    sql = text("""
+        SELECT
+            s."SaleID",
+            s."SaleDate",
+            s."CustomerName",
+            COALESCE((
+                SELECT string_agg(DISTINCT c."Mobile", ', ')
+                FROM "Customers" c
+                WHERE c."CustomerName" = s."CustomerName"
+            ), '') AS "Mobile",
+            s."PaymentMode",
+            s."GrandTotal"
+        FROM "Sales" s
+        WHERE s."CustomerName" ILIKE :search_pattern
+           OR EXISTS (
+                SELECT 1
+                FROM "Customers" c
+                WHERE c."CustomerName" = s."CustomerName"
+                  AND c."Mobile" ILIKE :search_pattern
+           )
+        ORDER BY s."SaleDate" DESC, s."SaleID" DESC
+        LIMIT 100
+    """)
+
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sql,
+            {"search_pattern": f"%{search_term.strip()}%"}
+        ).mappings().all()
+
+    return [dict(row) for row in rows]
+
+
 def load_sale_items(sale_id):
     sql = text("""
         SELECT
@@ -246,34 +280,87 @@ def get_open_drawer(conn, user_id):
 with st.container(border=True):
     section("🔎 Find original bill")
 
-    c1, c2, c3 = st.columns([1.2, 1, 2.2], gap="small")
+    bill_column, customer_column = st.columns(2, gap="large")
 
-    with c1:
-        sale_id = st.number_input(
-            "Bill / Sale ID",
-            min_value=1,
-            step=1,
-            value=st.session_state.get("return_sale_id", 1),
-            label_visibility="collapsed",
+    with bill_column:
+        st.markdown("**Search by bill number**")
+        st.caption("Use the Sale ID printed on the receipt.")
+        bill_input, bill_action = st.columns(
+            [1.4, 1], gap="small", vertical_alignment="bottom"
         )
+        with bill_input:
+            sale_id = st.number_input(
+                "Bill / Sale ID",
+                min_value=1,
+                step=1,
+                value=st.session_state.get("return_sale_id", 1),
+            )
+        with bill_action:
+            search_clicked = st.button(
+                "🔎 Search bill",
+                type="primary",
+                width="stretch",
+            )
 
-    with c2:
-        search_clicked = st.button(
-            "🔎 Search bill",
-            type="primary",
-            use_container_width=True,
+    with customer_column:
+        st.markdown("**Search by customer**")
+        st.caption("Find recent bills using a customer name or phone.")
+        customer_input, customer_action = st.columns(
+            [1.6, 1], gap="small", vertical_alignment="bottom"
         )
-
-    with c3:
-        st.caption("Enter the Bill / Sale ID printed on the customer's receipt.")
+        with customer_input:
+            customer_search = st.text_input(
+                "Customer name or phone",
+                placeholder="Name or phone number",
+            )
+        with customer_action:
+            customer_search_clicked = st.button(
+                "Search",
+                width="stretch",
+            )
 
 if search_clicked:
     st.session_state["return_sale_id"] = int(sale_id)
 
+if customer_search_clicked:
+    if not customer_search.strip():
+        st.warning("Enter a customer name or phone number to search.")
+        st.session_state.pop("return_customer_matches", None)
+    else:
+        try:
+            st.session_state["return_customer_matches"] = search_sales_by_customer(
+                customer_search
+            )
+        except Exception as e:
+            st.error("Unable to search bills by customer.")
+            log_exception(e)
+            st.exception(e)
+            st.session_state.pop("return_customer_matches", None)
+
+customer_matches = st.session_state.get("return_customer_matches", [])
+if customer_matches:
+    st.caption("Showing up to 100 of the most recent matching bills.")
+    selected_sale = st.selectbox(
+        "Matching bills",
+        customer_matches,
+        format_func=lambda match: (
+            f"Bill #{match['SaleID']} · {match['CustomerName'] or 'Walk-in Customer'}"
+            f" · {match['Mobile'] or 'No phone'}"
+            f" · {str(match['SaleDate'])[:10]}"
+            f" · {money(match['GrandTotal'])}"
+        ),
+        key="return_customer_sale",
+        label_visibility="collapsed",
+    )
+    if st.button("Open selected bill", type="primary"):
+        st.session_state["return_sale_id"] = int(selected_sale["SaleID"])
+elif customer_search_clicked and customer_search.strip():
+    st.info("No bills found for that customer name or phone number.")
+
 current_sale_id = st.session_state.get("return_sale_id")
 
 if not current_sale_id:
-    st.info("Enter a Bill / Sale ID and click Search bill.")
+    st.info("Search using a bill number or a customer's name or phone number.")
     st.stop()
 
 # =========================================================

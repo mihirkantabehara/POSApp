@@ -25,6 +25,8 @@ ROLE_PERMISSIONS = {
         "admin_stock_approval": False,
         "government_rates": True,
         "Cash_In_Hand": False,
+        "Customer_Credit_Management":True,
+        "customer_orders": True,
     },
     "Manager": {
         "billing": False,
@@ -41,6 +43,7 @@ ROLE_PERMISSIONS = {
         "manager_add_stock": False,
         "admin_stock_approval": False,
         "government_rates": True,
+        "customer_orders": False,
     },
     "Admin": {
         "billing": False,
@@ -57,6 +60,8 @@ ROLE_PERMISSIONS = {
         "manager_add_stock": False,
         "admin_stock_approval": True,
         "government_rates": True,
+        "Customer_Credit_Management":True,
+        "customer_orders": False,
     },
 }
 

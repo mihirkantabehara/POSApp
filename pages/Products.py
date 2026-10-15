@@ -1,3 +1,5 @@
+import hashlib
+
 import streamlit as st
 
 import pandas as pd
@@ -9,6 +11,93 @@ from sqlalchemy import text
 from database.database import engine
 
 from auth import require_role
+
+from product_images import (
+
+    delete_product_image,
+
+    get_product_image_path,
+
+    prepare_product_image,
+
+    save_product_image,
+
+)
+
+from product_image_web import find_grocery_image, prepare_catalogue_image
+from io import BytesIO
+
+def product_image_picker(key_prefix: str, product_name: str, barcode: str = "") -> bytes | None:
+    """Find a catalogue image or accept a compressed screenshot/photo upload."""
+    image_key = f"{key_prefix}_image_bytes"
+    query_key = f"{key_prefix}_image_query"
+    no_match_key = f"{key_prefix}_image_no_match"
+    query = f"{(product_name or '').strip()}|{(barcode or '').strip()}"
+    if st.session_state.get(query_key) != query:
+        st.session_state[query_key] = query
+        st.session_state.pop(image_key, None)
+        st.session_state[no_match_key] = False
+        if (product_name or '').strip():
+            with st.spinner("Searching grocery product images online..."):
+                found = find_grocery_image(product_name, barcode)
+            if found:
+                st.session_state[image_key] = prepare_catalogue_image(found)
+                st.session_state[no_match_key] = False
+            else:
+                st.session_state[no_match_key] = True
+
+    # Manual retry is useful if the user changes the search terms or the first lookup fails.
+    if st.button("🔄 Search web again", key=f"{key_prefix}_find_image",
+                  disabled=not (product_name or '').strip()):
+        with st.spinner("Searching grocery product images..."):
+            found = find_grocery_image(product_name, barcode)
+        if found:
+            st.session_state[image_key] = prepare_catalogue_image(found)
+            st.session_state[no_match_key] = False
+        else:
+            st.session_state.pop(image_key, None)
+            st.session_state[no_match_key] = True
+
+    uploaded_image = st.file_uploader(
+        "Or upload a screenshot/product image",
+        type=["jpg", "jpeg", "png", "webp"],
+        max_upload_size=20,
+        key=f"{key_prefix}_image_upload",
+        help=(
+            "On Windows, press Win+Shift+S and select just the product image, "
+            "save the screenshot, then upload it here. The image is cropped and "
+            "converted to WebP, up to 320 × 320 pixels and 100 KB, before saving."
+        ),
+    )
+    if uploaded_image is not None:
+        uploaded_bytes = uploaded_image.getvalue()
+        upload_hash_key = f"{key_prefix}_image_upload_hash"
+        upload_hash = hashlib.sha256(uploaded_bytes).hexdigest()
+        if (
+            st.session_state.get(upload_hash_key) != upload_hash
+            or not st.session_state.get(image_key)
+        ):
+            try:
+                st.session_state[image_key] = prepare_catalogue_image(uploaded_bytes)
+                st.session_state[upload_hash_key] = upload_hash
+                st.session_state[no_match_key] = False
+            except ValueError as exc:
+                st.session_state.pop(image_key, None)
+                st.session_state.pop(upload_hash_key, None)
+                st.error(str(exc))
+
+    image_bytes = st.session_state.get(image_key)
+    if image_bytes:
+        st.image(image_bytes, caption=f"Catalogue preview • {len(image_bytes) / 1024:.1f} KB", width=160)
+        st.caption("Square-cropped, 320 × 320 WebP image for lightweight catalogue display.")
+    elif st.session_state.get(no_match_key):
+        st.warning("No sufficiently matching web image was found. Take a product photo below.")
+        camera_photo = st.camera_input("📷 Take product photo", key=f"{key_prefix}_product_camera")
+        if camera_photo is not None:
+            image_bytes = prepare_catalogue_image(camera_photo.getvalue())
+            st.session_state[image_key] = image_bytes
+            st.image(image_bytes, caption=f"Camera photo preview • {len(image_bytes) / 1024:.1f} KB", width=160)
+    return st.session_state.get(image_key)
 
 # Camera barcode scanner
 
@@ -33,9 +122,13 @@ except ImportError:
 user = require_role("Manager", "Admin")
 
 st.set_page_config(
+
     page_title="Products",
+
     page_icon="📦",
+
     layout="wide",
+
 )
 
 st.title("")
@@ -43,63 +136,98 @@ st.title("")
 st.caption(f"Logged in as: {user['FullName']} • {user['Role']}")
 
 st.markdown(
+
     """
 
 <style>
+
 :root{
+
   --pos-ink:#0f172a;
+
   --pos-muted:#64748b;
+
   --pos-line:#e2e8f0;
+
   --pos-surface:#ffffff;
+
   --pos-blue:#2563eb;
+
   --pos-blue-soft:#eff6ff;
+
 }
 
 .block-container{
+
   max-width:1600px;
+
   padding-top:1.25rem;
+
   padding-bottom:1.5rem;
+
 }
 
 div[data-testid="stVerticalBlock"]{
+
   gap:.65rem;
+
 }
 
 .stTabs [data-baseweb="tab-list"]{
+
   gap:6px;
+
   border-bottom:1px solid var(--pos-line);
+
 }
 
 .stTabs [data-baseweb="tab"]{
+
   height:42px;
+
   padding:0 14px;
+
   font-weight:600;
+
 }
 
 div[data-testid="stMetric"]{
+
   border:1px solid var(--pos-line);
+
   border-radius:10px;
+
   padding:10px 12px;
+
   background:var(--pos-surface);
+
 }
 
 div[data-testid="stMetricLabel"]{
+
   color:var(--pos-muted);
+
   font-size:.78rem;
+
 }
 
 div[data-testid="stMetricValue"]{
+
   color:var(--pos-ink);
+
   font-size:1.2rem;
+
 }
 
 /* metrics strip */
+
 .stats-card{
+
   background:var(--pos-surface);border:1px solid var(--pos-line);
+
   border-radius:12px;padding:10px 12px 4px 12px;margin-bottom:4px;
+
 }
-
-
 
 /* product table */
 
@@ -112,11 +240,17 @@ div[data-testid="stMetricValue"]{
 }
 
 .product-table div[data-testid="stHorizontalBlock"]{
+
   padding:6px 12px;border-bottom:1px solid var(--pos-line);
+
   align-items:center;
+
 }
+
 .product-table div[data-testid="stHorizontalBlock"]:first-of-type{
+
   background:#f8fafc;border-bottom:2px solid var(--pos-ink);
+
   padding-top:8px;padding-bottom:8px;
 
 }
@@ -163,13 +297,14 @@ div[data-testid="stMetricValue"]{
 
 .stock-badge.low{background:#fef2f2;color:#b91c1c;}
 
-
-
 /* icon-only edit button */
 
 .product-table .stButton>button{
+
   background:transparent;border:1px solid transparent;
+
   padding:2px 8px;font-size:.9rem;border-radius:7px;min-height:0;
+
 }
 
 .product-table .stButton>button:hover{
@@ -181,7 +316,9 @@ div[data-testid="stMetricValue"]{
 </style>
 
 """,
+
     unsafe_allow_html=True,
+
 )
 
 # =========================================================
@@ -191,12 +328,19 @@ div[data-testid="stMetricValue"]{
 # =========================================================
 
 defaults = {
+
     "product_search": "",
+
     "new_barcode": "",
+
     "edit_barcode_value": "",
+
     "scanner_message": "",
+
     "product_page": 1,
+
     "product_page_size": 10,
+
 }
 
 for key, value in defaults.items():
@@ -211,13 +355,14 @@ for key, value in defaults.items():
 
 # =========================================================
 
-
 def load_lookup_data():
+
     """Load active product lookup values used by the Product master."""
 
     with engine.connect() as connection:
 
         categories = pd.read_sql(
+
             text("""
 
                 SELECT "CategoryID", "CategoryName"
@@ -229,10 +374,13 @@ def load_lookup_data():
                 ORDER BY "CategoryName"
 
             """),
+
             connection,
+
         )
 
         brands = pd.read_sql(
+
             text("""
 
                 SELECT "BrandID", "BrandName"
@@ -244,10 +392,13 @@ def load_lookup_data():
                 ORDER BY "BrandName"
 
             """),
+
             connection,
+
         )
 
         units = pd.read_sql(
+
             text("""
 
                 SELECT "UnitID", "UnitName"
@@ -259,11 +410,12 @@ def load_lookup_data():
                 ORDER BY "UnitName"
 
             """),
+
             connection,
+
         )
 
     return categories, brands, units
-
 
 def load_subcategories(category_id=None):
 
@@ -290,7 +442,6 @@ def load_subcategories(category_id=None):
     with engine.connect() as connection:
 
         return pd.read_sql(text(sql), connection, params=params)
-
 
 def load_products(search=""):
 
@@ -380,19 +531,30 @@ def load_products(search=""):
 
         return pd.DataFrame(result.fetchall(), columns=result.keys())
 
-
 def add_product(
+
     name,
+
     barcode,
+
     category_id,
+
     subcategory_id,
+
     brand_id,
+
     unit_id,
+
     pack_size,
+
     mrp,
+
     gst,
+
     description,
+
 ):
+
     """Create only the Product master. "Stock"/prices stay at batch level."""
 
     with engine.begin() as connection:
@@ -400,6 +562,7 @@ def add_product(
         if barcode.strip():
 
             existing = connection.execute(
+
                 text("""
 
                     SELECT "ProductID"
@@ -409,18 +572,25 @@ def add_product(
                     WHERE "Barcode" = :barcode
 
                 """),
+
                 {"barcode": barcode.strip()},
+
             ).first()
 
             if existing:
 
                 raise ValueError(
+
                     f"Barcode {barcode.strip()} already exists "
+
                     f"for Product ID {existing[0]}."
+
                 )
 
         lookup = (
+
             connection.execute(
+
                 text("""
 
                 SELECT
@@ -452,18 +622,29 @@ def add_product(
                     ON u."UnitID" = :unit_id
 
             """),
+
                 {
+
                     "category_id": category_id,
+
                     "subcategory_id": subcategory_id,
+
                     "brand_id": brand_id,
+
                     "unit_id": unit_id,
+
                 },
+
             )
+
             .mappings()
+
             .first()
+
         )
 
         product_id = connection.execute(
+
             text("""
 
                 INSERT INTO "Products"
@@ -506,8 +687,6 @@ def add_product(
 
                 )
 
-                RETURNING "ProductID"
-
                 VALUES
 
                 (
@@ -548,40 +727,70 @@ def add_product(
 
                 )
 
+                RETURNING "ProductID"
+
             """),
+
             {
+
                 "name": name.strip(),
+
                 "barcode": barcode.strip() or None,
+
                 "category_id": category_id,
+
                 "subcategory_id": subcategory_id,
+
                 "brand_id": brand_id,
+
                 "unit_id": unit_id,
+
                 "category": lookup["CategoryName"] if lookup else None,
+
                 "subcategory": lookup["SubcategoryName"] if lookup else None,
+
                 "brand": lookup["BrandName"] if lookup else None,
+
                 "unit": lookup["UnitName"] if lookup else None,
+
                 "pack_size": pack_size.strip() or None,
+
                 "mrp": float(mrp),
+
                 "gst": float(gst),
+
                 "description": description.strip() or None,
+
             },
+
         ).scalar()
 
         return product_id
 
-
 def update_product(
+
     product_id,
+
     name,
+
     barcode,
+
     category_id,
+
     subcategory_id,
+
     brand_id,
+
     unit_id,
+
     pack_size,
+
     mrp,
+
     gst,
+
     description,
+
 ):
 
     with engine.begin() as connection:
@@ -589,6 +798,7 @@ def update_product(
         if barcode.strip():
 
             existing = connection.execute(
+
                 text("""
 
                     SELECT "ProductID"
@@ -600,21 +810,31 @@ def update_product(
                       AND "ProductID" <> :product_id
 
                 """),
+
                 {
+
                     "barcode": barcode.strip(),
+
                     "product_id": int(product_id),
+
                 },
+
             ).first()
 
             if existing:
 
                 raise ValueError(
+
                     f"Barcode {barcode.strip()} is already assigned "
+
                     f"to Product ID {existing[0]}."
+
                 )
 
         lookup = (
+
             connection.execute(
+
                 text("""
 
                 SELECT
@@ -646,18 +866,29 @@ def update_product(
                     ON u."UnitID" = :unit_id
 
             """),
+
                 {
+
                     "category_id": category_id,
+
                     "subcategory_id": subcategory_id,
+
                     "brand_id": brand_id,
+
                     "unit_id": unit_id,
+
                 },
+
             )
+
             .mappings()
+
             .first()
+
         )
 
         connection.execute(
+
             text("""
 
                 UPDATE "Products"
@@ -695,34 +926,57 @@ def update_product(
                 WHERE "ProductID" = :product_id
 
             """),
+
             {
+
                 "product_id": int(product_id),
+
                 "name": name.strip(),
+
                 "barcode": barcode.strip() or None,
+
                 "category_id": category_id,
+
                 "subcategory_id": subcategory_id,
+
                 "brand_id": brand_id,
+
                 "unit_id": unit_id,
+
                 "category": lookup["CategoryName"] if lookup else None,
+
                 "subcategory": lookup["SubcategoryName"] if lookup else None,
+
                 "brand": lookup["BrandName"] if lookup else None,
+
                 "unit": lookup["UnitName"] if lookup else None,
+
                 "pack_size": pack_size.strip() or None,
+
                 "mrp": float(mrp),
+
                 "gst": float(gst),
+
                 "description": description.strip() or None,
+
             },
+
         )
 
-
 def add_lookup_value(table_name, name, category_id=None):
+
     """Add a value to one of the controlled lookup tables."""
 
     allowed = {
+
         "category": "ProductCategories",
+
         "subcategory": "ProductSubcategories",
+
         "brand": "ProductBrands",
+
         "unit": "ProductUnits",
+
     }
 
     table = allowed.get(table_name)
@@ -742,6 +996,7 @@ def add_lookup_value(table_name, name, category_id=None):
         if table_name == "category":
 
             connection.execute(
+
                 text("""
 
                     INSERT INTO "ProductCategories" ("CategoryName")
@@ -749,7 +1004,9 @@ def add_lookup_value(table_name, name, category_id=None):
                     VALUES (:name)
 
                 """),
+
                 {"name": clean_name},
+
             )
 
         elif table_name == "subcategory":
@@ -759,6 +1016,7 @@ def add_lookup_value(table_name, name, category_id=None):
                 raise ValueError("Select a category for the subcategory.")
 
             connection.execute(
+
                 text("""
 
                     INSERT INTO "ProductSubcategories"
@@ -768,12 +1026,15 @@ def add_lookup_value(table_name, name, category_id=None):
                     VALUES (:category_id, :name)
 
                 """),
+
                 {"category_id": int(category_id), "name": clean_name},
+
             )
 
         elif table_name == "brand":
 
             connection.execute(
+
                 text("""
 
                     INSERT INTO "ProductBrands" ("BrandName")
@@ -781,12 +1042,15 @@ def add_lookup_value(table_name, name, category_id=None):
                     VALUES (:name)
 
                 """),
+
                 {"name": clean_name},
+
             )
 
         else:
 
             connection.execute(
+
                 text("""
 
                     INSERT INTO "ProductUnits" ("UnitName")
@@ -794,9 +1058,10 @@ def add_lookup_value(table_name, name, category_id=None):
                     VALUES (:name)
 
                 """),
-                {"name": clean_name},
-            )
 
+                {"name": clean_name},
+
+            )
 
 def load_product_batches(product_id):
 
@@ -835,23 +1100,31 @@ def load_product_batches(product_id):
     with engine.connect() as connection:
 
         result = connection.execute(
+
             query,
+
             {"product_id": int(product_id)},
+
         )
 
         return pd.DataFrame(
+
             result.fetchall(),
+
             columns=result.keys(),
+
         )
 
-
 def adjust_batch_stock(batch_id, quantity_change):
+
     """Update one exact batch and the product total atomically."""
 
     with engine.begin() as connection:
 
         batch = (
+
             connection.execute(
+
                 text("""
 
                 SELECT
@@ -873,10 +1146,15 @@ def adjust_batch_stock(batch_id, quantity_change):
                 FOR UPDATE
 
             """),
+
                 {"batch_id": int(batch_id)},
+
             )
+
             .mappings()
+
             .first()
+
         )
 
         if not batch:
@@ -894,10 +1172,13 @@ def adjust_batch_stock(batch_id, quantity_change):
         if current_qty + change < 0:
 
             raise ValueError(
+
                 f"Batch {batch['BatchNo']} has only {current_qty:g} units."
+
             )
 
         result = connection.execute(
+
             text("""
 
                 UPDATE "ProductBatches"
@@ -911,10 +1192,15 @@ def adjust_batch_stock(batch_id, quantity_change):
                   AND "Quantity" + :change >= 0
 
             """),
+
             {
+
                 "batch_id": int(batch_id),
+
                 "change": change,
+
             },
+
         )
 
         if result.rowcount != 1:
@@ -922,6 +1208,7 @@ def adjust_batch_stock(batch_id, quantity_change):
             raise ValueError("Batch quantity could not be updated.")
 
         result = connection.execute(
+
             text("""
 
                 UPDATE "Products"
@@ -933,10 +1220,15 @@ def adjust_batch_stock(batch_id, quantity_change):
                   AND "Stock" + :change >= 0
 
             """),
+
             {
+
                 "product_id": int(batch["ProductID"]),
+
                 "change": change,
+
             },
+
         )
 
         if result.rowcount != 1:
@@ -944,14 +1236,19 @@ def adjust_batch_stock(batch_id, quantity_change):
             raise ValueError("Product total stock could not be updated.")
 
         return {
+
             "ProductID": int(batch["ProductID"]),
+
             "BatchNo": str(batch["BatchNo"]),
+
             "OldQuantity": current_qty,
+
             "NewQuantity": current_qty + change,
+
         }
 
-
 def scan_barcode_from_camera(camera_key):
+
     """
 
     Capture one image from the browser camera and decode common
@@ -963,16 +1260,23 @@ def scan_barcode_from_camera(camera_key):
     if not BARCODE_SCANNER_AVAILABLE:
 
         st.error(
+
             "Camera barcode scanning is not installed. "
+
             "Run: pip install pyzbar pillow"
+
         )
 
         return None
 
     picture = st.camera_input(
+
         "📷 Point the camera at the barcode and capture",
+
         key=camera_key,
+
         resolution="720p",
+
     )
 
     if picture is None:
@@ -988,8 +1292,11 @@ def scan_barcode_from_camera(camera_key):
         if not results:
 
             st.warning(
+
                 "No barcode detected. Hold the barcode straight, "
+
                 "fill the camera view, and capture again."
+
             )
 
             return None
@@ -997,12 +1304,19 @@ def scan_barcode_from_camera(camera_key):
         # Prefer the first detected barcode.
 
         barcode_value = (
+
             results[0]
+
             .data.decode(
+
                 "utf-8",
+
                 errors="ignore",
+
             )
+
             .strip()
+
         )
 
         if not barcode_value:
@@ -1019,8 +1333,8 @@ def scan_barcode_from_camera(camera_key):
 
         return None
 
-
 @st.dialog("✏️ Edit Product", width="large")
+
 def edit_product_dialog(row):
 
     product_id = int(row.ProductID)
@@ -1032,7 +1346,9 @@ def edit_product_dialog(row):
     subcategories = load_subcategories(current_category_id)
 
     current_subcategory_id = (
+
         None if pd.isna(row.SubcategoryID) else int(row.SubcategoryID)
+
     )
 
     current_brand_id = None if pd.isna(row.BrandID) else int(row.BrandID)
@@ -1042,20 +1358,31 @@ def edit_product_dialog(row):
     current_barcode = "" if pd.isna(row.Barcode) else str(row.Barcode)
 
     edit_name = st.text_input(
+
         "Product Name *",
+
         value=str(row.ProductName),
+
         key=f"edit_name_{product_id}",
+
     )
 
     edit_barcode = st.text_input(
+
         "Barcode",
+
         value=current_barcode,
+
         key=f"edit_barcode_{product_id}",
+
     )
 
     scan_edit = st.checkbox(
+
         "📷 Scan Barcode",
+
         key=f"scan_edit_{product_id}",
+
     )
 
     if scan_edit:
@@ -1079,7 +1406,9 @@ def edit_product_dialog(row):
     if current_category_id is not None:
 
         matches = categories.index[
+
             categories["CategoryID"] == current_category_id
+
         ].tolist()
 
         if matches:
@@ -1089,10 +1418,15 @@ def edit_product_dialog(row):
     with c1:
 
         selected_category = st.selectbox(
+
             "Category",
+
             category_names,
+
             index=category_index,
+
             key=f"edit_category_{product_id}",
+
         )
 
     selected_category_id = None
@@ -1100,10 +1434,15 @@ def edit_product_dialog(row):
     if selected_category != "-- Select Category --":
 
         selected_category_id = int(
+
             categories.loc[
+
                 categories["CategoryName"] == selected_category,
+
                 "CategoryID",
+
             ].iloc[0]
+
         )
 
     # Reload subcategories for the category selected in this dialog.
@@ -1115,7 +1454,9 @@ def edit_product_dialog(row):
         current_subcategory_id = None
 
     subcategory_names = ["-- Select Subcategory --"] + subcategories[
+
         "SubcategoryName"
+
     ].tolist()
 
     subcategory_index = 0
@@ -1123,7 +1464,9 @@ def edit_product_dialog(row):
     if current_subcategory_id is not None:
 
         matches = subcategories.index[
+
             subcategories["SubcategoryID"] == current_subcategory_id
+
         ].tolist()
 
         if matches:
@@ -1133,10 +1476,15 @@ def edit_product_dialog(row):
     with c2:
 
         selected_subcategory = st.selectbox(
+
             "Subcategory",
+
             subcategory_names,
+
             index=subcategory_index,
+
             key=f"edit_subcategory_{product_id}",
+
         )
 
     selected_subcategory_id = None
@@ -1144,10 +1492,15 @@ def edit_product_dialog(row):
     if selected_subcategory != "-- Select Subcategory --":
 
         selected_subcategory_id = int(
+
             subcategories.loc[
+
                 subcategories["SubcategoryName"] == selected_subcategory,
+
                 "SubcategoryID",
+
             ].iloc[0]
+
         )
 
     c1, c2 = st.columns(2)
@@ -1167,10 +1520,15 @@ def edit_product_dialog(row):
     with c1:
 
         selected_brand = st.selectbox(
+
             "Brand",
+
             brand_names,
+
             index=brand_index,
+
             key=f"edit_brand_{product_id}",
+
         )
 
     selected_brand_id = None
@@ -1178,10 +1536,15 @@ def edit_product_dialog(row):
     if selected_brand != "-- Select Brand --":
 
         selected_brand_id = int(
+
             brands.loc[
+
                 brands["BrandName"] == selected_brand,
+
                 "BrandID",
+
             ].iloc[0]
+
         )
 
     unit_names = ["-- Select Unit --"] + units["UnitName"].tolist()
@@ -1199,10 +1562,15 @@ def edit_product_dialog(row):
     with c2:
 
         selected_unit = st.selectbox(
+
             "Unit",
+
             unit_names,
+
             index=unit_index,
+
             key=f"edit_unit_{product_id}",
+
         )
 
     selected_unit_id = None
@@ -1210,10 +1578,15 @@ def edit_product_dialog(row):
     if selected_unit != "-- Select Unit --":
 
         selected_unit_id = int(
+
             units.loc[
+
                 units["UnitName"] == selected_unit,
+
                 "UnitID",
+
             ].iloc[0]
+
         )
 
     c1, c2 = st.columns(2)
@@ -1221,81 +1594,180 @@ def edit_product_dialog(row):
     with c1:
 
         edit_pack_size = st.text_input(
+
             "Pack Size",
+
             value="" if pd.isna(row.PackSize) else str(row.PackSize),
+
             key=f"edit_pack_size_{product_id}",
+
             placeholder="1 Kg / 500 ml",
+
         )
 
     with c2:
 
         edit_mrp = st.number_input(
+
             "MRP",
+
             min_value=0.0,
+
             value=0.0 if pd.isna(row.MRP) else float(row.MRP),
+
             step=0.01,
+
             key=f"edit_mrp_{product_id}",
+
         )
 
     edit_gst = st.number_input(
+
         "GST %",
+
         min_value=0.0,
+
         max_value=100.0,
+
         value=0.0 if pd.isna(row.GSTPercent) else float(row.GSTPercent),
+
         step=0.5,
+
         key=f"edit_gst_{product_id}",
+
     )
 
     edit_description = st.text_area(
+
         "Description",
+
         value="" if pd.isna(row.Description) else str(row.Description),
+
         key=f"edit_description_{product_id}",
+
+    )
+
+    current_image_path = get_product_image_path(product_id)
+
+    if current_image_path is not None:
+
+        st.image(str(current_image_path), caption="Current product image", width=180)
+
+    else:
+
+        st.caption("No product image has been added.")
+
+    selected_image_bytes = product_image_picker(
+        f"edit_product_{product_id}", edit_name, edit_barcode
+    )
+
+    remove_image = st.checkbox(
+
+        "Remove current image",
+
+        key=f"remove_image_{product_id}",
+
+        disabled=current_image_path is None,
+
     )
 
     st.caption(
+
         "Purchase price, selling price, quantity and expiry are maintained "
+
         "at batch level through Purchase Stock and Admin Approval."
+
     )
 
     if st.button(
+
         "💾 Update Product",
+
         type="primary",
+
         use_container_width=True,
+
         key=f"update_btn_{product_id}",
+
     ):
 
         if not edit_name.strip():
 
             st.error("Product name is required.")
 
+        elif selected_image_bytes is not None and remove_image:
+
+            st.error("Choose either a replacement image or remove the current image.")
+
         else:
 
             try:
 
+                prepared_image = selected_image_bytes
+
                 update_product(
+
                     product_id,
+
                     edit_name,
+
                     edit_barcode,
+
                     selected_category_id,
+
                     selected_subcategory_id,
+
                     selected_brand_id,
+
                     selected_unit_id,
+
                     edit_pack_size,
+
                     edit_mrp,
+
                     edit_gst,
+
                     edit_description,
+
                 )
+
+                try:
+
+                    if prepared_image is not None:
+
+                        save_product_image(product_id, prepared_image)
+
+                    elif remove_image:
+
+                        delete_product_image(product_id)
+
+                except Exception as image_error:
+
+                    st.error(
+
+                        "Product details were saved, but the product image "
+
+                        "could not be updated."
+
+                    )
+
+                    st.exception(image_error)
+
+                    st.stop()
 
                 st.success("Product updated successfully.")
 
                 st.rerun()
+
+            except ValueError as e:
+
+                st.error(str(e))
 
             except Exception as e:
 
                 st.error("Could not update product.")
 
                 st.exception(e)
-
 
 # =========================================================
 
@@ -1304,12 +1776,19 @@ def edit_product_dialog(row):
 # =========================================================
 
 tab1, tab2, tab3, tab4 = st.tabs(
+
     [
+
         "📋 Product List",
+
         "➕ Add Product",
+
         "📦 Stock Adjustment",
+
         "⚙️ Master Data",
+
     ]
+
 )
 
 # =========================================================
@@ -1321,9 +1800,13 @@ tab1, tab2, tab3, tab4 = st.tabs(
 with tab1:
 
     search = st.text_input(
+
         "🔍 Search Product / Barcode",
+
         placeholder="Type product name or barcode...",
+
         key="product_search_input",
+
     )
 
     # Start from page 1 when the search text changes.
@@ -1383,7 +1866,9 @@ with tab1:
                 with engine.connect() as connection:
 
                     total_inventory_value = (
+
                         connection.execute(inventory_value_query).scalar() or 0
+
                     )
 
             except Exception as e:
@@ -1397,29 +1882,45 @@ with tab1:
             c1, c2, c3, c4 = st.columns(4)
 
             c1.metric(
+
                 "Total Products",
+
                 len(products),
+
                 border=True,
+
             )
 
             c2.metric(
+
                 "Total Stock",
+
                 f"{products['Stock'].sum():,.2f}",
+
                 border=True,
+
             )
 
             low_stock = int((products["Stock"] <= 10).sum())
 
             c3.metric(
+
                 "Low Stock",
+
                 low_stock,
+
                 border=True,
+
             )
 
             c4.metric(
+
                 "Total Inventory Value",
+
                 f"₹{total_inventory_value:,.2f}",
+
                 border=True,
+
             )
 
             st.markdown("</div>", unsafe_allow_html=True)
@@ -1443,10 +1944,15 @@ with tab1:
             with page_size_col:
 
                 page_size = st.selectbox(
+
                     "Products per page",
+
                     [10, 20, 30, 50],
+
                     index=[10, 20, 30, 50].index(st.session_state.product_page_size),
+
                     key="product_page_size_select",
+
                 )
 
                 if page_size != st.session_state.product_page_size:
@@ -1460,8 +1966,11 @@ with tab1:
             page_size = st.session_state.product_page_size
 
             total_pages = max(
+
                 1,
+
                 (total_products + page_size - 1) // page_size,
+
             )
 
             if st.session_state.product_page > total_pages:
@@ -1483,125 +1992,182 @@ with tab1:
                 last_record = min(last_index, total_products)
 
                 st.markdown(
-                    f"""
-                    <div style="
-                        text-align: right;
-                        padding-top: 28px;
-                        color: #64748b;
-                        font-size: 14px;
-                    ">
-                        Showing <b>{first_record}-{last_record}</b>
-                        of <b>{total_products}</b> products
-                        &nbsp;&nbsp;•&nbsp;&nbsp;
-                        Page <b>{current_page}</b> of <b>{total_pages}</b>
-                    </div>
-                    """,
+                    f'<div style="text-align: right; padding-top: 28px; '
+                    f'color: #64748b; font-size: 14px;">'
+                    f'Showing <b>{first_record}-{last_record}</b> '
+                    f'of <b>{total_products}</b> products&nbsp;&nbsp;•&nbsp;&nbsp;'
+                    f'Page <b>{current_page}</b> of <b>{total_pages}</b></div>',
                     unsafe_allow_html=True,
                 )
 
             st.markdown(
+
                 '<div class="product-table">',
+
                 unsafe_allow_html=True,
+
             )
 
             header = st.columns([2.5, 1.35, 1.2, 1.2, 0.9, 0.95, 0.8, 0.65, 0.55])
 
             for col, label in zip(
+
                 header,
+
                 [
+
                     "Product",
+
                     "Barcode",
+
                     "Category",
+
                     "Brand",
+
                     "Unit",
+
                     "MRP",
+
                     "Stock",
+
                     "GST",
+
                     "",
+
                 ],
+
             ):
 
                 col.markdown(
+
                     f'<span class="th-label">{label}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
             for row in page_products.itertuples():
 
                 r1, r2, r3, r4, r5, r6, r7, r8, r9 = st.columns(
+
                     [2.5, 1.35, 1.2, 1.2, 0.9, 0.95, 0.8, 0.65, 0.55]
+
                 )
 
+                image_path = get_product_image_path(int(row.ProductID))
+
+                if image_path is not None:
+
+                    r1.image(str(image_path), width=48)
+
                 r1.markdown(
+
                     f'<span class="cell-name">{row.ProductName}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 barcode_text = (
+
                     "—"
+
                     if pd.isna(row.Barcode) or not str(row.Barcode).strip()
+
                     else str(row.Barcode)
+
                 )
 
                 r2.markdown(
+
                     f'<span class="cell-barcode">{barcode_text}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 category_text = (
+
                     "—" if pd.isna(row.CategoryName) else str(row.CategoryName)
+
                 )
 
                 r3.markdown(
+
                     f'<span class="cell-name">{category_text}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 brand_text = "—" if pd.isna(row.BrandName) else str(row.BrandName)
 
                 r4.markdown(
+
                     f'<span class="cell-name">{brand_text}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 unit_text = "—" if pd.isna(row.UnitName) else str(row.UnitName)
 
                 r5.markdown(
+
                     f'<span class="cell-name">{unit_text}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 mrp_value = 0 if pd.isna(row.MRP) else float(row.MRP)
 
                 r6.markdown(
+
                     f'<span class="cell-num">₹{mrp_value:,.2f}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 stock_value = 0 if pd.isna(row.Stock) else float(row.Stock)
 
                 badge = (
+
                     '<span class="stock-badge low">Low</span>'
+
                     if stock_value <= 10
+
                     else ""
+
                 )
 
                 r7.markdown(
+
                     f'<span class="cell-num">{stock_value:g}{badge}</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 gst_value = 0 if pd.isna(row.GSTPercent) else float(row.GSTPercent)
 
                 r8.markdown(
+
                     f'<span class="cell-num">{gst_value:g}%</span>',
+
                     unsafe_allow_html=True,
+
                 )
 
                 if r9.button(
+
                     "✏️",
+
                     key=f"edit_icon_{row.ProductID}",
+
                     help="Edit product",
+
                 ):
 
                     edit_product_dialog(row)
@@ -1621,10 +2187,15 @@ with tab1:
             with nav1:
 
                 if st.button(
+
                     "⏮ First",
+
                     disabled=current_page <= 1,
+
                     use_container_width=True,
+
                     key="product_first",
+
                 ):
 
                     st.session_state.product_page = 1
@@ -1634,10 +2205,15 @@ with tab1:
             with nav2:
 
                 if st.button(
+
                     "◀ Previous",
+
                     disabled=current_page <= 1,
+
                     use_container_width=True,
+
                     key="product_previous",
+
                 ):
 
                     st.session_state.product_page = current_page - 1
@@ -1647,11 +2223,17 @@ with tab1:
             with nav3:
 
                 selected_page = st.selectbox(
+
                     "Page",
+
                     range(1, total_pages + 1),
+
                     index=current_page - 1,
+
                     label_visibility="collapsed",
+
                     key="product_page_select",
+
                 )
 
                 if selected_page != current_page:
@@ -1663,10 +2245,15 @@ with tab1:
             with nav4:
 
                 if st.button(
+
                     "Next ▶",
+
                     disabled=current_page >= total_pages,
+
                     use_container_width=True,
+
                     key="product_next",
+
                 ):
 
                     st.session_state.product_page = current_page + 1
@@ -1676,10 +2263,15 @@ with tab1:
             with nav5:
 
                 if st.button(
+
                     "Last ⏭",
+
                     disabled=current_page >= total_pages,
+
                     use_container_width=True,
+
                     key="product_last",
+
                 ):
 
                     st.session_state.product_page = total_pages
@@ -1703,9 +2295,13 @@ with tab2:
     st.subheader("➕ Add New Product")
 
     st.caption(
+
         "Create the product master only. Category, subcategory, brand and unit "
+
         "are controlled lookup values. Stock, purchase price, selling price "
+
         "and expiry are added later through Purchase Stock and approved by Admin."
+
     )
 
     try:
@@ -1715,7 +2311,9 @@ with tab2:
     except Exception as e:
 
         st.error(
+
             "Unable to load product lookup values. Run the lookup migration SQL first."
+
         )
 
         st.exception(e)
@@ -1729,15 +2327,21 @@ with tab2:
     with scan_col1:
 
         scan_new = st.checkbox(
+
             "Open Camera Scanner",
+
             key="scan_new_barcode",
+
         )
 
     with scan_col2:
 
         st.caption(
+
             "Use the laptop webcam or the camera of the phone/tablet "
+
             "that is opening this Streamlit page."
+
         )
 
     if scan_new:
@@ -1751,10 +2355,15 @@ with tab2:
             st.success(f"✅ Barcode detected: {scanned_barcode}")
 
     barcode = st.text_input(
+
         "Barcode",
+
         value=st.session_state.new_barcode,
+
         key="new_barcode_input",
+
         placeholder="Scan with camera or enter barcode manually",
+
     )
 
     st.session_state.new_barcode = barcode
@@ -1762,8 +2371,11 @@ with tab2:
     st.divider()
 
     name = st.text_input(
+
         "Product Name *",
+
         placeholder="Example: Rice 25kg",
+
     )
 
     # -----------------------------------------------------
@@ -1779,9 +2391,13 @@ with tab2:
     with c1:
 
         selected_category = st.selectbox(
+
             "Category",
+
             category_names,
+
             key="new_product_category",
+
         )
 
     selected_category_id = None
@@ -1789,25 +2405,37 @@ with tab2:
     if selected_category != "-- Select Category --":
 
         selected_category_id = int(
+
             categories.loc[
+
                 categories["CategoryName"] == selected_category,
+
                 "CategoryID",
+
             ].iloc[0]
+
         )
 
     subcategories = load_subcategories(selected_category_id)
 
     subcategory_names = ["-- Select Subcategory --"] + subcategories[
+
         "SubcategoryName"
+
     ].tolist()
 
     with c2:
 
         selected_subcategory = st.selectbox(
+
             "Subcategory",
+
             subcategory_names,
+
             key="new_product_subcategory",
+
             disabled=selected_category_id is None,
+
         )
 
     selected_subcategory_id = None
@@ -1815,10 +2443,15 @@ with tab2:
     if selected_subcategory != "-- Select Subcategory --":
 
         selected_subcategory_id = int(
+
             subcategories.loc[
+
                 subcategories["SubcategoryName"] == selected_subcategory,
+
                 "SubcategoryID",
+
             ].iloc[0]
+
         )
 
     c1, c2 = st.columns(2)
@@ -1830,17 +2463,25 @@ with tab2:
     with c1:
 
         selected_brand = st.selectbox(
+
             "Brand",
+
             brand_names,
+
             key="new_product_brand",
+
         )
 
     with c2:
 
         selected_unit = st.selectbox(
+
             "Unit",
+
             unit_names,
+
             key="new_product_unit",
+
         )
 
     selected_brand_id = None
@@ -1848,10 +2489,15 @@ with tab2:
     if selected_brand != "-- Select Brand --":
 
         selected_brand_id = int(
+
             brands.loc[
+
                 brands["BrandName"] == selected_brand,
+
                 "BrandID",
+
             ].iloc[0]
+
         )
 
     selected_unit_id = None
@@ -1859,10 +2505,15 @@ with tab2:
     if selected_unit != "-- Select Unit --":
 
         selected_unit_id = int(
+
             units.loc[
+
                 units["UnitName"] == selected_unit,
+
                 "UnitID",
+
             ].iloc[0]
+
         )
 
     c1, c2, c3 = st.columns(3)
@@ -1870,43 +2521,71 @@ with tab2:
     with c1:
 
         pack_size = st.text_input(
+
             "Pack Size",
+
             placeholder="1 Kg / 500 ml",
+
         )
 
     with c2:
 
         mrp = st.number_input(
+
             "MRP",
+
             min_value=0.0,
+
             value=0.0,
+
             step=0.01,
+
         )
 
     with c3:
 
         gst = st.number_input(
+
             "GST %",
+
             min_value=0.0,
+
             max_value=100.0,
+
             value=0.0,
+
             step=0.5,
+
         )
 
     description = st.text_area(
+
         "Description",
+
         placeholder="Optional product description",
+
+    )
+
+    selected_image_bytes = product_image_picker(
+        "new_product", name, barcode
     )
 
     st.info(
+
         "📦 Purchase price, selling price, quantity and expiry are batch-level "
+
         "data and will be entered from Manager → Purchase Stock."
+
     )
 
     if st.button(
+
         "➕ SAVE PRODUCT",
+
         type="primary",
+
         use_container_width=True,
+
     ):
 
         if not name.strip():
@@ -1917,22 +2596,59 @@ with tab2:
 
             try:
 
+                prepared_image = selected_image_bytes
+
                 new_id = add_product(
+
                     name,
+
                     barcode,
+
                     selected_category_id,
+
                     selected_subcategory_id,
+
                     selected_brand_id,
+
                     selected_unit_id,
+
                     pack_size,
+
                     mrp,
+
                     gst,
+
                     description,
+
                 )
+
+                if prepared_image is not None:
+
+                    try:
+
+                        save_product_image(new_id, prepared_image)
+
+                    except Exception as image_error:
+
+                        st.error(
+
+                            f"Product '{name}' was created (ID {new_id}), "
+
+                            "but its image could not be saved."
+
+                        )
+
+                        st.exception(image_error)
+
+                        st.stop()
 
                 st.success(f"Product '{name}' added successfully (ID {new_id}).")
 
                 st.session_state.new_barcode = ""
+
+            except ValueError as e:
+
+                st.error(str(e))
 
             except Exception as e:
 
@@ -1951,8 +2667,11 @@ with tab3:
     st.subheader("📦 Stock Adjustment")
 
     st.caption(
+
         "Select the product and exact batch before changing stock. "
+
         "Both batch quantity and total product stock are updated."
+
     )
 
     try:
@@ -1966,28 +2685,43 @@ with tab3:
         else:
 
             product_options = {
+
                 f"{row.ProductName} | Current stock: {float(row.Stock):g}": int(
+
                     row.ProductID
+
                 )
+
                 for row in stock_products.itertuples()
+
             }
 
             selected_label = st.selectbox(
+
                 "1. Select Product",
+
                 list(product_options.keys()),
+
                 key="stock_product",
+
             )
 
             selected_id = product_options[selected_label]
 
             selected = stock_products[stock_products["ProductID"] == selected_id].iloc[
+
                 0
+
             ]
 
             st.metric(
+
                 "Current Total Product Stock",
+
                 f"{float(selected['Stock']):,.2f}",
+
                 border=True,
+
             )
 
             batches = load_product_batches(selected_id)
@@ -1995,8 +2729,11 @@ with tab3:
             if batches.empty:
 
                 st.warning(
+
                     "No active batch exists for this product. "
+
                     "Please add stock through Batch Stock In first."
+
                 )
 
             else:
@@ -2008,55 +2745,87 @@ with tab3:
                 for batch in batches.itertuples():
 
                     expiry = (
+
                         pd.to_datetime(batch.ExpiryDate).strftime("%d-%m-%Y")
+
                         if pd.notna(batch.ExpiryDate)
+
                         else "No expiry"
+
                     )
 
                     label = (
+
                         f"Batch: {batch.BatchNo} | "
+
                         f"Qty: {float(batch.Quantity):g} | "
+
                         f"Expiry: {expiry}"
+
                     )
 
                     batch_options[label] = int(batch.BatchID)
 
                 selected_batch_label = st.selectbox(
+
                     "Batch",
+
                     list(batch_options.keys()),
+
                     key="stock_batch",
+
                 )
 
                 selected_batch_id = batch_options[selected_batch_label]
 
                 selected_batch = batches[batches["BatchID"] == selected_batch_id].iloc[
+
                     0
+
                 ]
 
                 b1, b2, b3, b4 = st.columns(4)
 
                 b1.metric(
+
                     "Batch No.",
+
                     str(selected_batch["BatchNo"]),
+
                     border=True,
+
                 )
+
                 b2.metric(
+
                     "Batch Quantity",
+
                     f"{float(selected_batch['Quantity']):,.2f}",
+
                     border=True,
+
                 )
 
                 expiry_text = (
+
                     pd.to_datetime(selected_batch["ExpiryDate"]).strftime("%d-%m-%Y")
+
                     if pd.notna(selected_batch["ExpiryDate"])
+
                     else "No expiry"
+
                 )
 
                 b3.metric("Expiry", expiry_text, border=True)
+
                 b4.metric(
+
                     "Purchase Price",
+
                     f"₹{float(selected_batch['PurchasePrice'] or 0):,.2f}",
+
                     border=True,
+
                 )
 
                 st.divider()
@@ -2064,27 +2833,45 @@ with tab3:
                 st.markdown("### 3. Stock Movement")
 
                 adjustment_type = st.radio(
+
                     "Adjustment",
+
                     ["Add Stock", "Reduce Stock"],
+
                     horizontal=True,
+
                     key="batch_adjustment_type",
+
                 )
 
                 quantity = st.number_input(
+
                     "Quantity",
+
                     min_value=0.01,
+
                     value=1.0,
+
                     step=1.0,
+
                     key="batch_stock_quantity",
+
                 )
 
                 reason = st.text_input(
+
                     "Reason",
+
                     placeholder=(
+
                         "Example: New purchase / damaged stock / "
+
                         "physical count correction"
+
                     ),
+
                     key="batch_stock_reason",
+
                 )
 
                 current_qty = float(selected_batch["Quantity"] or 0)
@@ -2100,48 +2887,71 @@ with tab3:
                 p1, p2 = st.columns(2)
 
                 p1.metric("Batch Before", f"{current_qty:,.2f}", border=True)
+
                 p2.metric("Batch After", f"{after_qty:,.2f}", border=True)
 
                 if adjustment_type == "Reduce Stock" and quantity > current_qty:
 
                     st.error(
+
                         f"Cannot reduce {quantity:g}. "
+
                         f"Selected batch has only {current_qty:g}."
+
                     )
 
                 if st.button(
+
                     "💾 UPDATE SELECTED BATCH",
+
                     type="primary",
+
                     use_container_width=True,
+
                     key="update_batch_stock",
+
                 ):
 
                     if adjustment_type == "Reduce Stock" and quantity > current_qty:
 
                         st.error(
+
                             "Reduce quantity cannot be greater than "
+
                             "the selected batch quantity."
+
                         )
 
                     else:
 
                         change = (
+
                             float(quantity)
+
                             if adjustment_type == "Add Stock"
+
                             else -float(quantity)
+
                         )
 
                         try:
 
                             result = adjust_batch_stock(
+
                                 selected_batch_id,
+
                                 change,
+
                             )
 
                             st.success(
+
                                 f"Batch {result['BatchNo']} updated: "
+
                                 f"{result['OldQuantity']:g} → "
+
                                 f"{result['NewQuantity']:g}"
+
                             )
 
                             if reason.strip():
@@ -2171,9 +2981,13 @@ with tab3:
 if not BARCODE_SCANNER_AVAILABLE:
 
     st.sidebar.warning(
+
         "📷 Camera barcode scanner is not installed.\n\n"
+
         "Run:\n"
+
         "pip install pyzbar pillow"
+
     )
 
 # =========================================================
@@ -2187,7 +3001,9 @@ with tab4:
     st.subheader("⚙️ Product Master Data")
 
     st.caption(
+
         "Manage the lookup values used by Category, Subcategory, Brand and Unit."
+
     )
 
     try:
@@ -2209,15 +3025,23 @@ with tab4:
         st.markdown("### 📂 Categories")
 
         new_category = st.text_input(
+
             "New Category",
+
             key="master_new_category",
+
             placeholder="Example: Grocery",
+
         )
 
         if st.button(
+
             "➕ Add Category",
+
             key="add_category_button",
+
             use_container_width=True,
+
         ):
 
             try:
@@ -2235,9 +3059,13 @@ with tab4:
                 st.exception(e)
 
         st.dataframe(
+
             categories[["CategoryID", "CategoryName"]],
+
             use_container_width=True,
+
             hide_index=True,
+
         )
 
     with m2:
@@ -2245,15 +3073,23 @@ with tab4:
         st.markdown("### 🏷️ Brands")
 
         new_brand = st.text_input(
+
             "New Brand",
+
             key="master_new_brand",
+
             placeholder="Example: Fortune",
+
         )
 
         if st.button(
+
             "➕ Add Brand",
+
             key="add_brand_button",
+
             use_container_width=True,
+
         ):
 
             try:
@@ -2271,9 +3107,13 @@ with tab4:
                 st.exception(e)
 
         st.dataframe(
+
             brands[["BrandID", "BrandName"]],
+
             use_container_width=True,
+
             hide_index=True,
+
         )
 
     st.divider()
@@ -2287,9 +3127,13 @@ with tab4:
         category_names = ["-- Select Category --"] + categories["CategoryName"].tolist()
 
         master_category = st.selectbox(
+
             "Parent Category",
+
             category_names,
+
             key="master_subcategory_category",
+
         )
 
         master_category_id = None
@@ -2297,30 +3141,47 @@ with tab4:
         if master_category != "-- Select Category --":
 
             master_category_id = int(
+
                 categories.loc[
+
                     categories["CategoryName"] == master_category,
+
                     "CategoryID",
+
                 ].iloc[0]
+
             )
 
         new_subcategory = st.text_input(
+
             "New Subcategory",
+
             key="master_new_subcategory",
+
             placeholder="Example: Rice",
+
         )
 
         if st.button(
+
             "➕ Add Subcategory",
+
             key="add_subcategory_button",
+
             use_container_width=True,
+
         ):
 
             try:
 
                 add_lookup_value(
+
                     "subcategory",
+
                     new_subcategory,
+
                     master_category_id,
+
                 )
 
                 st.success("Subcategory added.")
@@ -2336,9 +3197,13 @@ with tab4:
         subcategory_view = load_subcategories(master_category_id)
 
         st.dataframe(
+
             subcategory_view,
+
             use_container_width=True,
+
             hide_index=True,
+
         )
 
     with m2:
@@ -2346,15 +3211,23 @@ with tab4:
         st.markdown("### 📏 Units")
 
         new_unit = st.text_input(
+
             "New Unit",
+
             key="master_new_unit",
+
             placeholder="Kg / Litre / Piece",
+
         )
 
         if st.button(
+
             "➕ Add Unit",
+
             key="add_unit_button",
+
             use_container_width=True,
+
         ):
 
             try:
@@ -2372,7 +3245,11 @@ with tab4:
                 st.exception(e)
 
         st.dataframe(
+
             units[["UnitID", "UnitName"]],
+
             use_container_width=True,
+
             hide_index=True,
+
         )

@@ -24,10 +24,10 @@ st.markdown("""
 <style>
 .block-container { padding-top:.55rem !important; padding-bottom:.65rem !important; max-width:1500px; }
 .compact-title { font-size:1.3rem; font-weight:700; margin:0 0 .25rem 0; }
-.section-title { font-size:1rem; font-weight:700; margin:.3rem 0 .2rem 0; }
+.section-title { font-size:1rem; font-weight:700; line-height:1.35; margin:.45rem 0 .35rem 0; }
 div[data-testid="stVerticalBlock"] { gap:.32rem !important; }
 div[data-testid="stHorizontalBlock"] { gap:.5rem !important; }
-hr { margin:.35rem 0 !important; }
+hr { margin:.55rem 0 !important; }
 div[data-testid="stWidgetLabel"] p { font-size:.7rem !important; margin-bottom:2px !important; }
 div[data-testid="stTextInput"] input, div[data-testid="stNumberInput"] input { height:33px !important; min-height:33px !important; padding:3px 8px !important; font-size:.8rem !important; }
 div[data-testid="stDateInput"] input { height:33px !important; min-height:33px !important; font-size:.8rem !important; }
@@ -373,6 +373,47 @@ def find_product(barcode, product_name):
     return None, None
 
 
+def search_product_suggestions(product_name):
+    search_prefix = (product_name or "").strip()
+    if len(search_prefix) < 2:
+        return []
+
+    with engine.connect() as conn:
+        products = conn.execute(
+            text("""
+                SELECT
+                    "ProductID",
+                    "ProductName",
+                    "Barcode"
+                FROM "Products"
+                WHERE "ProductName" ILIKE :search_pattern
+                ORDER BY "ProductName", "ProductID"
+            """),
+            {"search_pattern": f"{search_prefix}%"},
+        ).mappings().all()
+
+    return [dict(product) for product in products]
+
+
+def select_product_suggestion(products):
+    selected_product_id = st.session_state.get("product_suggestion")
+    selected_product = next(
+        (
+            product
+            for product in products
+            if product["ProductID"] == selected_product_id
+        ),
+        None,
+    )
+    if selected_product:
+        st.session_state.product_name = selected_product["ProductName"]
+        st.session_state.barcode = selected_product["Barcode"] or ""
+        st.session_state.selected_product_id = selected_product["ProductID"]
+
+
+def clear_product_suggestion():
+    st.session_state.pop("product_suggestion", None)
+    st.session_state.pop("selected_product_id", None)
 
 
 
@@ -429,6 +470,8 @@ def clear_product_form():
     st.session_state.barcode = ""
 
     st.session_state.product_name = ""
+
+    st.session_state.pop("selected_product_id", None)
 
     st.session_state.quantity = 1.0
 
@@ -594,6 +637,8 @@ def add_stock():
 
     st.session_state.product_name = ""
 
+    st.session_state.pop("selected_product_id", None)
+
     st.session_state.quantity = 1.0
 
     st.session_state.purchase_price = 0.0
@@ -664,14 +709,65 @@ st.divider()
 
 st.markdown('<div class="section-title">1. Add Stock</div>', unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns([1.05, 2.55, .8])
+selected_product_id = st.session_state.get("selected_product_id")
+if selected_product_id is None:
+    col1, col2, col3 = st.columns(
+        [1.05, 2.55, .8],
+        vertical_alignment="bottom",
+    )
+else:
+    col1, col2 = st.columns(
+        [1.05, 3.35],
+        vertical_alignment="bottom",
+    )
 with col1:
     st.text_input("Barcode", key="barcode", placeholder="Scan barcode")
 with col2:
-    st.text_input("Product Name", key="product_name", placeholder="Enter product name")
-with col3:
-    st.markdown("<div style='height:21px'></div>", unsafe_allow_html=True)
-    check_product_clicked = st.button("🔎 Check", width="stretch")
+    st.text_input(
+        "Product Name",
+        key="product_name",
+        placeholder="Enter product name",
+        on_change=clear_product_suggestion,
+    )
+if selected_product_id is None:
+    with col3:
+        check_product_clicked = st.button(
+            "🔍",
+            width="stretch",
+            help="Check for an exact product match",
+        )
+else:
+    check_product_clicked = False
+
+product_suggestions = []
+product_search_text = st.session_state.product_name.strip()
+if len(product_search_text) >= 2 and selected_product_id is None:
+    try:
+        product_suggestions = search_product_suggestions(product_search_text)
+    except Exception as e:
+        st.error("Unable to search matching products.")
+        log_exception(e)
+        st.exception(e)
+
+if product_suggestions:
+    suggestion_labels = {
+        product["ProductID"]: (
+            f"{product['ProductName']} · Barcode: {product['Barcode'] or '—'}"
+        )
+        for product in product_suggestions
+    }
+    st.selectbox(
+        "Matching products",
+        options=list(suggestion_labels),
+        index=None,
+        format_func=suggestion_labels.get,
+        key="product_suggestion",
+        on_change=select_product_suggestion,
+        args=(product_suggestions,),
+        placeholder="Choose a matching product",
+    )
+elif len(product_search_text) >= 2 and selected_product_id is None:
+    st.caption("No existing product starts with that name. You can add it as a new product.")
 
 if check_product_clicked:
     barcode = st.session_state.barcode.strip()
@@ -686,7 +782,10 @@ if check_product_clicked:
         else:
             st.warning("No matching product found. This will be treated as a NEW PRODUCT.")
 
-col1, col2, col3, col4 = st.columns([1.0, 1.15, 1.15, 1.15])
+col1, col2, col3, col4 = st.columns(
+    [1.0, 1.15, 1.15, 1.15],
+    vertical_alignment="bottom",
+)
 with col1:
     st.number_input("Quantity", min_value=0.001, value=1.0, step=1.0, key="quantity")
 with col2:
@@ -699,7 +798,7 @@ with col4:
 purchase_value = st.session_state.quantity * st.session_state.purchase_price
 st.caption(f"Purchase Value: **₹{purchase_value:,.2f}**")
 
-col1, col2 = st.columns([1.4, 1])
+col1, col2 = st.columns([1.4, 1], vertical_alignment="center")
 with col1:
     st.button("➕ Add Stock", type="primary", width="stretch", on_click=add_stock)
 with col2:
@@ -900,7 +999,10 @@ else:
     for index, item in enumerate(st.session_state.stock_items):
 
         with st.container(border=True):
-            col1, col2, col3, col4 = st.columns([2.8, 2.0, 2.0, .8])
+            col1, col2, col3, col4 = st.columns(
+                [2.8, 2.0, 2.0, .8],
+                vertical_alignment="center",
+            )
 
             with col1:
                 st.markdown(f"<div class='stock-name'>{item['ProductName']}</div>", unsafe_allow_html=True)

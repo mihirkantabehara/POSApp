@@ -9,3 +9,4 @@ venv/
 logs/
 database/
 streamlit/
+product-images/

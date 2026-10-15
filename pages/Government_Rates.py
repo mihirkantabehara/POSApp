@@ -259,13 +259,6 @@ def fetch_government_rates():
 # PAGE
 # =========================================================
 
-st.title("🏛️ Government Grocery Rates")
-
-st.caption(
-    "Government of India — Department of Consumer Affairs "
-    "Price Monitoring System"
-)
-
 try:
     data = fetch_government_rates()
 
@@ -281,28 +274,35 @@ except Exception as exc:
     st.stop()
 
 
-col1, col2, col3 = st.columns([2, 2, 1])
+col1, col2, col3 = st.columns(
+    [1, 1, 0.8],
+    vertical_alignment="center",
+)
 
 with col1:
-    st.success(
-        "Retail rates: "
-        f"{data['retail_date'] or 'Latest available'}"
-    )
+    with st.container(border=True):
+        st.markdown(
+            f"**Retail rates as of**  \n{data['retail_date'] or 'Latest available'}"
+        )
 
 with col2:
-    st.info(
-        "Wholesale rates: "
-        f"{data['wholesale_date'] or 'Latest available'}"
-    )
+    with st.container(border=True):
+        st.markdown(
+            f"**Wholesale rates as of**  \n"
+            f"{data['wholesale_date'] or 'Latest available'}"
+        )
 
 with col3:
     if st.button(
         "🔄 Refresh Rates",
-        use_container_width=True,
+        width="stretch",
     ):
         fetch_government_rates.clear()
         st.rerun()
 
+st.caption(
+    "Official reference prices from the Department of Consumer Affairs"
+)
 
 st.divider()
 
@@ -358,7 +358,7 @@ tab_retail, tab_wholesale = st.tabs(
 )
 
 with tab_retail:
-    st.subheader("All India Average Retail Price")
+    st.markdown("#### All India Average Retail Price")
     show_rate_table(
         data["retail"],
         "per Kg",
@@ -366,7 +366,7 @@ with tab_retail:
     )
 
 with tab_wholesale:
-    st.subheader("All India Average Wholesale Price")
+    st.markdown("#### All India Average Wholesale Price")
     show_rate_table(
         data["wholesale"],
         "per Qtl.",

@@ -8,10 +8,22 @@ from auth import require_login
 user = require_login()
 role = user["Role"]
 
+st.markdown(
+    """
+    <style>
+    h2, h3 {
+        font-size: 1.05rem !important;
+        line-height: 1.3 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 st.caption(f"Welcome, {user['FullName']} · {role}")
 
 
-def get_available_funds():
+def get_available_funds(user_id=None):
     with engine.begin() as connection:
         connection.execute(text("""
                 CREATE TABLE IF NOT EXISTS "BankTransactions" (
@@ -33,6 +45,10 @@ def get_available_funds():
                         "OpeningCash"
                     FROM "CashDrawers"
                     WHERE "Status" = 'Open'
+                      AND (
+    CAST(:user_id AS BIGINT) IS NULL
+    OR "UserID" = CAST(:user_id AS BIGINT)
+)
                     ORDER BY "UserID", "CashDrawerID" DESC
                 ),
                 drawer_balances AS (
@@ -89,18 +105,106 @@ def get_available_funds():
                     COALESCE(SUM("CashInHand"), 0) AS "CashInHand",
                     COALESCE(SUM("CashInBank"), 0) AS "CashInBank"
                 FROM drawer_balances
-            """)).mappings().one()
+            """), {"user_id": user_id}).mappings().one()
 
     return float(balances["CashInHand"]), float(balances["CashInBank"])
 
 
-st.subheader("Cash position across all users")
+def get_salesboy_cash_balances():
+    query = text("""
+        WITH sales_boys AS (
+            SELECT "UserID", "FullName"
+            FROM "Users"
+            WHERE "Role" = 'Sales Boy'
+        ),
+        drawers AS (
+            SELECT DISTINCT ON (cd."UserID")
+                cd."CashDrawerID",
+                cd."UserID",
+                cd."OpenDateTime",
+                cd."OpeningCash"
+            FROM "CashDrawers" AS cd
+            INNER JOIN sales_boys AS sb ON sb."UserID" = cd."UserID"
+            WHERE cd."Status" = 'Open'
+            ORDER BY cd."UserID", cd."CashDrawerID" DESC
+        )
+        SELECT
+            sb."FullName" AS "Sales Boy",
+            CASE
+                WHEN d."CashDrawerID" IS NULL THEN 0
+                ELSE
+                    COALESCE(d."OpeningCash", 0)
+                    + COALESCE((
+                        SELECT SUM(s."GrandTotal")
+                        FROM "Sales" AS s
+                        WHERE s."UserID" = d."UserID"
+                          AND s."PaymentMode" = 'Cash'
+                          AND s."SaleDate" >= d."OpenDateTime"
+                    ), 0)
+                    + COALESCE((
+                        SELECT SUM(
+                            CASE
+                                WHEN ct."TransactionType" = 'Cash In'
+                                    THEN ct."Amount"
+                                ELSE -ct."Amount"
+                            END
+                        )
+                        FROM "CashTransactions" AS ct
+                        WHERE ct."CashDrawerID" = d."CashDrawerID"
+                          AND ct."TransactionType" IN ('Cash In', 'Expense', 'Cash Out')
+                    ), 0)
+            END AS "Cash in hand"
+        FROM sales_boys AS sb
+        LEFT JOIN drawers AS d ON d."UserID" = sb."UserID"
+        ORDER BY sb."FullName"
+    """)
+    with engine.connect() as connection:
+        result = connection.execute(query)
+        return pd.DataFrame(result.fetchall(), columns=result.keys())
+
+
+st.subheader(
+    "Your cash position" if role == "Sales Boy" else "Cash position across all users"
+)
 try:
-    cash_in_hand, cash_in_bank = get_available_funds()
-    cash_col, bank_col = st.columns(2)
-    cash_col.metric("Cash in hand", f"₹{cash_in_hand:,.2f}", border=True)
-    bank_col.metric("Cash in bank", f"₹{cash_in_bank:,.2f}", border=True)
-    st.caption("Totals include each user's latest open cash drawer.")
+    cash_in_hand, cash_in_bank = get_available_funds(
+        user["UserID"] if role == "Sales Boy" else None
+    )
+    salesboy_balances = (
+        get_salesboy_cash_balances()
+        if role == "Admin"
+        else pd.DataFrame(columns=["Sales Boy", "Cash in hand"])
+    )
+    if role == "Sales Boy":
+        st.metric("Cash in hand", f"₹{cash_in_hand:,.2f}", border=True)
+    elif role == "Admin":
+        cash_col, bank_col = st.columns(2)
+        with cash_col.container(border=True):
+            amount_col, breakdown_col = st.columns([1.15, 1])
+            amount_col.metric(
+                "Cash in hand",
+                f"₹{cash_in_hand:,.2f}",
+                border=False,
+            )
+            with breakdown_col:
+                st.caption("Cash in hand by Sales Boy")
+                if salesboy_balances.empty:
+                    st.caption("No Sales Boy accounts found.")
+                else:
+                    for _, row in salesboy_balances.iterrows():
+                        st.markdown(
+                            f"**{row['Sales Boy']}** · "
+                            f"₹{float(row['Cash in hand']):,.2f}"
+                        )
+                    salesboy_total = float(salesboy_balances["Cash in hand"].sum())
+                    st.caption(f"Sales Boy total: ₹{salesboy_total:,.2f}")
+        bank_col.metric("Cash in bank", f"₹{cash_in_bank:,.2f}", border=True)
+    else:
+        cash_col, bank_col = st.columns(2)
+        cash_col.metric("Cash in hand", f"₹{cash_in_hand:,.2f}", border=True)
+        bank_col.metric("Cash in bank", f"₹{cash_in_bank:,.2f}", border=True)
+    if role != "Sales Boy":
+        st.caption("Totals include each user's latest open cash drawer.")
 except Exception as e:
     st.error("Unable to load cash and bank balances.")
     log_exception(e)
